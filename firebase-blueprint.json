@@ -1,0 +1,76 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "User profile with role",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["teacher"] }
+      },
+      "required": ["uid", "name", "email", "role"]
+    },
+    "AppSettings": {
+      "title": "App Settings",
+      "description": "Global system configuration",
+      "type": "object",
+      "properties": {
+        "systemName": { "type": "string" },
+        "systemDescription": { "type": "string" },
+        "logoUrl": { "type": "string" }
+      },
+      "required": ["systemName", "systemDescription", "logoUrl"]
+    },
+    "Booking": {
+      "title": "Booking",
+      "description": "Lab booking record",
+      "type": "object",
+      "properties": {
+        "labId": { "type": "string" },
+        "labName": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "timeSlots": { "type": "array", "items": { "type": "string" } },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "teacherName": { "type": "string" },
+        "className": { "type": "string" },
+        "purpose": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "confirmed", "rejected"] },
+        "reason": { "type": "string" },
+        "createdAt": { "type": "object" }
+      },
+      "required": ["labId", "labName", "date", "timeSlots", "userId", "userName", "status", "createdAt", "teacherName", "className", "purpose"]
+    },
+    "Lab": {
+      "title": "Lab",
+      "description": "Laboratory information",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "capacity": { "type": "number" },
+        "description": { "type": "string" }
+      },
+      "required": ["name"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profiles"
+    },
+    "/labs/{labId}": {
+      "schema": "Lab",
+      "description": "Laboratory definitions"
+    },
+    "/bookings/{bookingId}": {
+      "schema": "Booking",
+      "description": "Booking records"
+    },
+    "/settings/{docId}": {
+      "schema": "AppSettings",
+      "description": "Global application settings"
+    }
+  }
+}

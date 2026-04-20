@@ -1,0 +1,6 @@
+{
+  "name": "Sistem Tempahan Makmal Bahasa",
+  "description": "Sistem pengurusan tempahan makmal bahasa untuk guru dan pelajar dengan kalendar ketersediaan dan notifikasi masa-nyata.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
