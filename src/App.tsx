@@ -39,7 +39,9 @@ import {
   ChevronRight,
   BookOpen,
   Settings as SettingsIcon,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Menu,
+  X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -117,6 +119,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'calendar' | 'admin'>('dashboard');
   const [labs, setLabs] = useState<Lab[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [settings, setSettings] = useState<AppSettings>({
     systemName: 'Sistem Booking Makmal Bahasa',
     systemDescription: 'Pengurusan Tempahan Berpusat',
@@ -258,42 +261,63 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen w-full bg-slate-50 font-sans text-slate-900 overflow-hidden leading-tight">
+    <div className="flex h-screen w-full bg-slate-50 font-sans text-slate-900 overflow-hidden leading-tight lg:flex-row flex-col">
+      {/* Mobile Overlay */}
+      <AnimatePresence>
+        {isSidebarOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setIsSidebarOpen(false)}
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-40 lg:hidden"
+          />
+        )}
+      </AnimatePresence>
+
       {/* Sidebar */}
-      <aside className="w-64 bg-white border-r border-slate-200 flex flex-col shrink-0">
-        <div className="p-6 border-b border-slate-100">
-          <div className="flex items-center gap-2">
-            <div className="bg-blue-600 p-1.5 rounded-lg shrink-0">
-              {settings.logoUrl ? (
-                <img src={settings.logoUrl} alt="Logo" className="w-5 h-5 object-contain" referrerPolicy="no-referrer" />
-              ) : (
-                <BookOpen className="text-white w-5 h-5" />
-              )}
+      <aside className={cn(
+        "fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-slate-200 flex flex-col shrink-0 transition-transform duration-300 lg:relative lg:translate-x-0",
+        isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+      )}>
+        <div className="p-6 border-b border-slate-100 flex items-center justify-between lg:block">
+          <div>
+            <div className="flex items-center gap-2">
+              <div className="bg-blue-600 p-1.5 rounded-lg shrink-0">
+                {settings.logoUrl ? (
+                  <img src={settings.logoUrl} alt="Logo" className="w-5 h-5 object-contain" referrerPolicy="no-referrer" />
+                ) : (
+                  <BookOpen className="text-white w-5 h-5" />
+                )}
+              </div>
+              <h1 className="text-sm font-bold tracking-tight text-blue-700 leading-tight">{settings.systemName}</h1>
             </div>
-            <h1 className="text-sm font-bold tracking-tight text-blue-700 leading-tight">{settings.systemName}</h1>
+            <p className="text-[9px] text-slate-500 uppercase tracking-widest font-bold mt-1.5 line-clamp-1">
+              {settings.systemDescription}
+            </p>
           </div>
-          <p className="text-[9px] text-slate-500 uppercase tracking-widest font-bold mt-1.5">
-            {settings.systemDescription}
-          </p>
+          <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden p-2 text-slate-400 hover:text-slate-600">
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         <nav className="flex-1 p-4 space-y-1">
           <div className="px-3 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Menu Utama</div>
           <SidebarNavButton 
             active={activeTab === 'dashboard'} 
-            onClick={() => setActiveTab('dashboard')}
+            onClick={() => { setActiveTab('dashboard'); setIsSidebarOpen(false); }}
             icon={<LayoutDashboard className="w-4 h-4" />}
             label="Papan Pemuka"
           />
           <SidebarNavButton 
             active={activeTab === 'calendar'} 
-            onClick={() => setActiveTab('calendar')}
+            onClick={() => { setActiveTab('calendar'); setIsSidebarOpen(false); }}
             icon={<CalendarIcon className="w-4 h-4" />}
             label="Kalendar & Tempah"
           />
           <SidebarNavButton 
             active={activeTab === 'admin'} 
-            onClick={() => setActiveTab('admin')}
+            onClick={() => { setActiveTab('admin'); setIsSidebarOpen(false); }}
             icon={<Lock className="w-4 h-4" />}
             label="Admin Panel"
           />
@@ -325,19 +349,29 @@ export default function App() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col overflow-hidden">
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 shrink-0">
+      <main className="flex-1 flex flex-col overflow-hidden relative">
+        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 lg:px-8 shrink-0">
           <div className="flex items-center space-x-4">
+            <button 
+              onClick={() => setIsSidebarOpen(true)}
+              className="lg:hidden p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-lg transition-colors"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
             <div className="h-6 w-px bg-slate-200 hidden md:block"></div>
-            <h2 className="text-sm font-bold text-slate-700 tracking-tight">
-              {activeTab === 'dashboard' ? 'Papan Pemuka Ringkasan' : 
-               activeTab === 'calendar' ? 'Jadual Ketersediaan Makmal' : 'Pengurusan Admin'}
+            <h2 className="text-xs sm:text-sm font-bold text-slate-700 tracking-tight flex items-center gap-2">
+              <span className="lg:hidden shrink-0">
+                {activeTab === 'dashboard' ? <LayoutDashboard className="w-4 h-4 text-blue-600" /> : 
+                 activeTab === 'calendar' ? <CalendarIcon className="w-4 h-4 text-blue-600" /> : <Lock className="w-4 h-4 text-blue-600" />}
+              </span>
+              {activeTab === 'dashboard' ? 'Papan Pemuka' : 
+               activeTab === 'calendar' ? 'Kalendar Tempahan' : 'Admin Panel'}
             </h2>
           </div>
-          <div className="flex space-x-3 items-center">
+          <div className="flex space-x-2 sm:space-x-3 items-center">
             <div className="hidden sm:flex items-center px-3 py-1.5 bg-green-50 text-green-700 rounded-full border border-green-100 text-[10px] font-bold uppercase tracking-wider">
               <span className="w-1.5 h-1.5 bg-green-500 rounded-full mr-2"></span>
-              Makmal Tersedia
+              Tersedia
             </div>
             <div className="relative p-2 text-slate-400 hover:text-slate-600 transition-colors">
               <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-rose-500 rounded-full border-2 border-white"></span>
@@ -346,7 +380,7 @@ export default function App() {
           </div>
         </header>
 
-        <div className="p-6 flex-1 overflow-y-auto bg-slate-50/50">
+        <div className="p-4 lg:p-6 flex-1 overflow-y-auto bg-slate-50/50">
           <div className="max-w-6xl mx-auto">
             <AnimatePresence mode="wait">
               {activeTab === 'dashboard' && (
@@ -482,10 +516,12 @@ function DashboardView({ profile, bookings }: { profile: UserProfile, bookings: 
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 lg:gap-6">
         <StatCard title="Menunggu" value={stats.pending} icon={<Clock className="text-amber-500 w-5 h-5" />} color="amber" />
         <StatCard title="Disahkan" value={stats.confirmed} icon={<CheckCircle2 className="text-emerald-500 w-5 h-5" />} color="emerald" />
-        <StatCard title="Jumlah Rekod" value={stats.total} icon={<LayoutDashboard className="text-blue-500 w-5 h-5" />} color="blue" />
+        <div className="col-span-2 md:col-span-1">
+          <StatCard title="Jumlah Rekod" value={stats.total} icon={<LayoutDashboard className="text-blue-500 w-5 h-5" />} color="blue" />
+        </div>
       </div>
 
       <div className="space-y-4">
@@ -501,7 +537,7 @@ function DashboardView({ profile, bookings }: { profile: UserProfile, bookings: 
             Tiada data tempahan ditemui makmal kali ini.
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {bookings.slice(0, 6).map(booking => (
               <div key={booking.id}>
                 <BookingCard booking={booking} />
@@ -644,7 +680,7 @@ function CalendarView({ labs, bookings, profile }: { labs: Lab[], bookings: Book
                   onClick={() => setSelectedDay(day)}
                   disabled={!isCurrentMonth}
                   className={cn(
-                    'aspect-square h-auto min-h-[4rem] p-1.5 flex flex-col items-center justify-start transition-all relative bg-white',
+                    'aspect-square h-auto min-h-[3rem] sm:min-h-[4rem] p-1 sm:p-1.5 flex flex-col items-center justify-start transition-all relative bg-white',
                     !isCurrentMonth && 'bg-slate-50 opacity-30 pointer-events-none',
                     isSelected && 'bg-blue-600 text-white z-10 shadow-inner',
                     isToday && !isSelected && 'bg-blue-50 text-blue-700',
@@ -821,10 +857,10 @@ function BookingModal({
         initial={{ scale: 0.95, opacity: 0, y: 20 }} 
         animate={{ scale: 1, opacity: 1, y: 0 }} 
         exit={{ scale: 0.95, opacity: 0, y: 20 }}
-        className="bg-white rounded-2xl p-8 max-w-xl w-full relative z-10 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto"
+        className="bg-white rounded-2xl p-6 sm:p-8 max-w-xl w-full relative z-10 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto"
       >
         <div className="mb-6 border-b border-slate-100 pb-4">
-          <h2 className="text-xl font-bold tracking-tight text-slate-900">Permohonan Tempahan Baru</h2>
+          <h2 className="text-lg sm:text-xl font-bold tracking-tight text-slate-900 leading-tight">Permohonan Tempahan Baru</h2>
           <div className="flex gap-4 mt-2">
             <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest flex items-center gap-1.5">
               <BookOpen className="w-3 h-3 text-blue-500" /> {lab.name}
@@ -964,25 +1000,27 @@ function AdminPanelView({ bookings, settings }: { bookings: Booking[], settings:
 
   return (
     <div className="space-y-6">
-      <div className="flex gap-2 p-1 bg-slate-200/50 rounded-xl w-fit">
-        <button 
-          onClick={() => setAdminTab('approvals')}
-          className={cn(
-            "px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all",
-            adminTab === 'approvals' ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
-          )}
-        >
-          Pengesahan
-        </button>
-        <button 
-          onClick={() => setAdminTab('settings')}
-          className={cn(
-            "px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all",
-            adminTab === 'settings' ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
-          )}
-        >
-          Tetapan Sistem
-        </button>
+      <div className="overflow-x-auto -mx-1 p-1">
+        <div className="flex gap-2 p-1 bg-slate-200/50 rounded-xl w-fit whitespace-nowrap">
+          <button 
+            onClick={() => setAdminTab('approvals')}
+            className={cn(
+              "px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all",
+              adminTab === 'approvals' ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+            )}
+          >
+            Pengesahan
+          </button>
+          <button 
+            onClick={() => setAdminTab('settings')}
+            className={cn(
+              "px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all",
+              adminTab === 'settings' ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+            )}
+          >
+            Tetapan Sistem
+          </button>
+        </div>
       </div>
 
       <AnimatePresence mode="wait">
