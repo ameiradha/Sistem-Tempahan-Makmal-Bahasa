@@ -20,6 +20,7 @@ import {
   query, 
   where, 
   addDoc,
+  deleteDoc,
   serverTimestamp,
   updateDoc,
   orderBy
@@ -201,7 +202,7 @@ export default function App() {
       setLabs(labsData);
       // Seed if empty
       if (labsData.length === 0 && profile?.role === 'teacher') {
-        addDoc(collection(db, 'labs'), { name: 'Makmal Bahasa 1', capacity: 30, description: 'Utama' });
+        addDoc(collection(db, 'labs'), { name: 'Makmal Bahasa', capacity: 30, description: 'Utama' });
       }
     });
   }, [user, profile]);
@@ -414,7 +415,7 @@ export default function App() {
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                 >
-                  <AdminPanelView bookings={bookings} settings={settings} />
+                  <AdminPanelView bookings={bookings} settings={settings} labs={labs} />
                 </motion.div>
               )}
             </AnimatePresence>
@@ -949,7 +950,7 @@ function BookingModal({
   );
 }
 
-function AdminPanelView({ bookings, settings }: { bookings: Booking[], settings: AppSettings }) {
+function AdminPanelView({ bookings, settings, labs }: { bookings: Booking[], settings: AppSettings, labs: Lab[] }) {
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [adminPass, setAdminPass] = useState('');
   const [error, setError] = useState('');
@@ -1030,7 +1031,7 @@ function AdminPanelView({ bookings, settings }: { bookings: Booking[], settings:
           </motion.div>
         ) : (
           <motion.div key="settings" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }}>
-            <AdminSettingsView settings={settings} />
+            <AdminSettingsView settings={settings} labs={labs} />
           </motion.div>
         )}
       </AnimatePresence>
@@ -1162,9 +1163,41 @@ function AdminApprovalsView({ bookings }: { bookings: Booking[] }) {
   );
 }
 
-function AdminSettingsView({ settings }: { settings: AppSettings }) {
+function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: Lab[] }) {
   const [form, setForm] = useState(settings);
   const [saving, setSaving] = useState(false);
+
+  const handleDeleteLab = async (id: string) => {
+    if (!confirm('Adakah anda pasti mahu memadam makmal ini? Semua tempahan berkaitan mungkin terjejas.')) return;
+    try {
+      await deleteDoc(doc(db, 'labs', id));
+    } catch (err) {
+      console.error(err);
+      alert('Gagal memadam makmal.');
+    }
+  };
+
+  const handleUpdateLab = async (id: string, currentName: string) => {
+    const newName = prompt('Masukkan nama makmal baru:', currentName);
+    if (!newName || newName === currentName) return;
+    try {
+      await updateDoc(doc(db, 'labs', id), { name: newName });
+    } catch (err) {
+      console.error(err);
+      alert('Gagal mengemaskini nama makmal.');
+    }
+  };
+
+  const handleAddLab = async () => {
+    const name = prompt('Masukkan nama makmal baru:');
+    if (!name) return;
+    try {
+      await addDoc(collection(db, 'labs'), { name, capacity: 30, description: 'Utama' });
+    } catch (err) {
+      console.error(err);
+      alert('Gagal menambah makmal.');
+    }
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1267,6 +1300,48 @@ function AdminSettingsView({ settings }: { settings: AppSettings }) {
                 >
                   Padam Logo
                 </button>
+              )}
+            </div>
+          </div>
+
+          <div className="pt-6 mt-6 border-t border-slate-100">
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Senarai Makmal</h4>
+              <button 
+                type="button" 
+                onClick={handleAddLab}
+                className="text-[10px] text-blue-600 font-bold uppercase hover:underline flex items-center gap-1"
+              >
+                <Plus className="w-3 h-3" /> Tambah Makmal
+              </button>
+            </div>
+            <div className="space-y-2">
+              {labs.map(lab => (
+                <div key={lab.id} className="flex items-center justify-between p-3 rounded-lg border border-slate-100 bg-slate-50">
+                  <div className="flex items-center gap-3">
+                    <BookOpen className="w-4 h-4 text-slate-400" />
+                    <span className="text-sm font-bold text-slate-700">{lab.name}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button 
+                      type="button" 
+                      onClick={() => handleUpdateLab(lab.id, lab.name)}
+                      className="text-[10px] text-blue-600 font-bold uppercase hover:underline"
+                    >
+                      Edit
+                    </button>
+                    <button 
+                      type="button" 
+                      onClick={() => handleDeleteLab(lab.id)}
+                      className="text-[10px] text-rose-500 font-bold uppercase hover:underline"
+                    >
+                      Padam
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {labs.length === 0 && (
+                <p className="text-xs text-slate-400 italic text-center py-4">Tiada makmal didaftarkan.</p>
               )}
             </div>
           </div>
