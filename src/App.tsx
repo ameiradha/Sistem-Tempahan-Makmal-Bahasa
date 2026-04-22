@@ -200,6 +200,16 @@ export default function App() {
     return onSnapshot(collection(db, 'labs'), (snapshot) => {
       const labsData = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Lab));
       setLabs(labsData);
+      
+      // Auto-rename "Makmal Bahasa 1" if it exists (proactive fix for user)
+      if (profile?.role === 'teacher') {
+        labsData.forEach(lab => {
+          if (lab.name === 'Makmal Bahasa 1') {
+            updateDoc(doc(db, 'labs', lab.id), { name: 'Makmal Bahasa' });
+          }
+        });
+      }
+
       // Seed if empty
       if (labsData.length === 0 && profile?.role === 'teacher') {
         addDoc(collection(db, 'labs'), { name: 'Makmal Bahasa', capacity: 30, description: 'Utama' });
@@ -216,6 +226,16 @@ export default function App() {
     
     return onSnapshot(q, (snapshot) => {
       const bData = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Booking));
+      
+      // Auto-rename labName in bookings for consistency (proactive fix)
+      if (profile?.role === 'teacher') {
+        bData.forEach(booking => {
+          if (booking.labName === 'Makmal Bahasa 1') {
+            updateDoc(doc(db, 'bookings', booking.id), { labName: 'Makmal Bahasa' });
+          }
+        });
+      }
+
       setBookings(bData.sort((a, b) => b.createdAt?.seconds - a.createdAt?.seconds));
     });
   }, [user, profile]);
