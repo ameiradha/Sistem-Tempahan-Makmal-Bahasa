@@ -201,15 +201,6 @@ export default function App() {
       const labsData = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Lab));
       setLabs(labsData);
       
-      // Auto-rename "Makmal Bahasa 1" if it exists (proactive fix for user)
-      if (profile?.role === 'teacher') {
-        labsData.forEach(lab => {
-          if (lab.name === 'Makmal Bahasa 1') {
-            updateDoc(doc(db, 'labs', lab.id), { name: 'Makmal Bahasa' });
-          }
-        });
-      }
-
       // Seed if empty
       if (labsData.length === 0 && profile?.role === 'teacher') {
         addDoc(collection(db, 'labs'), { name: 'Makmal Bahasa', capacity: 30, description: 'Utama' });
@@ -226,16 +217,6 @@ export default function App() {
     
     return onSnapshot(q, (snapshot) => {
       const bData = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Booking));
-      
-      // Auto-rename labName in bookings for consistency (proactive fix)
-      if (profile?.role === 'teacher') {
-        bData.forEach(booking => {
-          if (booking.labName === 'Makmal Bahasa 1') {
-            updateDoc(doc(db, 'bookings', booking.id), { labName: 'Makmal Bahasa' });
-          }
-        });
-      }
-
       setBookings(bData.sort((a, b) => b.createdAt?.seconds - a.createdAt?.seconds));
     });
   }, [user, profile]);
@@ -1320,6 +1301,48 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
                 >
                   Padam Logo
                 </button>
+              )}
+            </div>
+          </div>
+
+          <div className="pt-6 mt-6 border-t border-slate-100">
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Senarai Makmal</h4>
+              <button 
+                type="button" 
+                onClick={handleAddLab}
+                className="text-[10px] text-blue-600 font-bold uppercase hover:underline flex items-center gap-1"
+              >
+                <Plus className="w-3 h-3" /> Tambah Makmal
+              </button>
+            </div>
+            <div className="space-y-2">
+              {labs.map(lab => (
+                <div key={lab.id} className="flex items-center justify-between p-3 rounded-lg border border-slate-100 bg-slate-50">
+                  <div className="flex items-center gap-3">
+                    <BookOpen className="w-4 h-4 text-slate-400" />
+                    <span className="text-sm font-bold text-slate-700">{lab.name}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button 
+                      type="button" 
+                      onClick={() => handleUpdateLab(lab.id, lab.name)}
+                      className="text-[10px] text-blue-600 font-bold uppercase hover:underline"
+                    >
+                      Edit
+                    </button>
+                    <button 
+                      type="button" 
+                      onClick={() => handleDeleteLab(lab.id)}
+                      className="text-[10px] text-rose-500 font-bold uppercase hover:underline"
+                    >
+                      Padam
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {labs.length === 0 && (
+                <p className="text-xs text-slate-400 italic text-center py-4">Tiada makmal didaftarkan.</p>
               )}
             </div>
           </div>

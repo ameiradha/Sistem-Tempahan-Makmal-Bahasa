@@ -39,9 +39,7 @@ service cloud.firestore {
     match /users/{userId} {
       allow get: if isSignedIn();
       allow list: if isSignedIn();
-      allow create, update: if isOwner(userId) 
-        && (request.resource.data.role == 'teacher')
-        && request.resource.data.keys().hasAll(['name', 'email', 'role']);
+      allow create, update: if isOwner(userId);
     }
 
     // --- Settings Rules ---
@@ -77,15 +75,14 @@ service cloud.firestore {
       allow update: if isSignedIn() && (
         (isOwner(resource.data.userId) 
           && resource.data.status == 'pending'
+          // Owner can only cancel (set to rejected)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
           && request.resource.data.status == 'rejected')
         ||
-        (isTeacher()
-          && request.resource.data.diff(resource.data).affectedKeys().hasAny(['status', 'reason'])
-          && request.resource.data.status in ['confirmed', 'rejected'])
+        (isTeacher())
       );
 
-      allow delete: if false; 
+      allow delete: if isTeacher(); 
     }
   }
 }
