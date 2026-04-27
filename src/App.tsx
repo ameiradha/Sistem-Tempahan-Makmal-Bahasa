@@ -1200,14 +1200,22 @@ function AdminApprovalsView({ bookings }: { bookings: Booking[] }) {
                         {b.status === 'confirmed' ? 'SIAP' : 'BATAL'}
                       </span>
                     </td>
-                    <td className="px-6 py-3 text-right">
+                    <td className="px-6 py-3 text-right flex justify-end gap-2">
                       {b.status === 'confirmed' && (
-                        <button 
-                          onClick={() => setEditingBooking(b)} 
-                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors inline-flex items-center gap-1 font-bold uppercase text-[9px]"
-                        >
-                          <Pencil className="w-3 h-3" /> Edit
-                        </button>
+                        <>
+                          <button 
+                            onClick={() => setEditingBooking(b)} 
+                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors inline-flex items-center gap-1 font-bold uppercase text-[9px]"
+                          >
+                            <Pencil className="w-3 h-3" /> Edit
+                          </button>
+                          <button 
+                            onClick={() => handleAction(b.id, 'rejected')} 
+                            className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors inline-flex items-center gap-1 font-bold uppercase text-[9px]"
+                          >
+                            <XCircle className="w-3 h-3" /> Batal
+                          </button>
+                        </>
                       )}
                     </td>
                   </tr>
