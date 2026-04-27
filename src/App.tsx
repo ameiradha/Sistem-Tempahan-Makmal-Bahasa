@@ -42,7 +42,8 @@ import {
   Settings as SettingsIcon,
   Image as ImageIcon,
   Menu,
-  X
+  X,
+  Pencil
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -57,7 +58,8 @@ import {
   addMonths, 
   subMonths,
   isBefore,
-  startOfToday
+  startOfToday,
+  addDays
 } from 'date-fns';
 
 import { auth, db } from './lib/firebase';
@@ -693,10 +695,15 @@ function CalendarView({ labs, bookings, profile }: { labs: Lab[], bookings: Book
             ))}
             {calendarDays.map(day => {
               const isSelected = isSameDay(day, selectedDay);
-              const isToday = isSameDay(day, new Date());
+              const today = startOfToday();
+              const tomorrow = addDays(today, 1);
+              const isToday = isSameDay(day, today);
+              const isTomorrow = isSameDay(day, tomorrow);
+              const isAllowable = isToday || isTomorrow;
+              
               const isCurrentMonth = isSameMonth(day, monthStart);
               const hasBooking = bookings.some(b => isSameDay(new Date(b.date), day) && b.labId === selectedLab?.id && b.status === 'confirmed');
-              const isPast = isBefore(day, startOfToday());
+              const isPast = isBefore(day, today);
 
               return (
                 <button
@@ -708,7 +715,9 @@ function CalendarView({ labs, bookings, profile }: { labs: Lab[], bookings: Book
                     !isCurrentMonth && 'bg-slate-50 opacity-30 pointer-events-none',
                     isSelected && 'bg-blue-600 text-white z-10 shadow-inner',
                     isToday && !isSelected && 'bg-blue-50 text-blue-700',
-                    isPast && !isSelected && 'text-slate-300'
+                    isTomorrow && !isSelected && 'bg-indigo-50 text-indigo-700',
+                    isPast && !isSelected && 'text-slate-300',
+                    !isAllowable && isCurrentMonth && 'text-slate-500'
                   )}
                 >
                   <span className="text-[11px] font-bold self-start">{format(day, 'd')}</span>
@@ -759,8 +768,11 @@ function CalendarView({ labs, bookings, profile }: { labs: Lab[], bookings: Book
           <div className="space-y-2 mb-2">
             {TIME_SLOTS.map(slot => {
               const booking = bookingsOnSelectedDay.find(b => b.timeSlots?.includes(slot));
-              const isPast = isBefore(selectedDay, startOfToday());
-              const isToday = isSameDay(selectedDay, new Date());
+              const today = startOfToday();
+              const tomorrow = addDays(today, 1);
+              const isToday = isSameDay(selectedDay, today);
+              const isTomorrow = isSameDay(selectedDay, tomorrow);
+              const isAllowable = isToday || isTomorrow;
               
               return (
                 <div 
@@ -782,10 +794,10 @@ function CalendarView({ labs, bookings, profile }: { labs: Lab[], bookings: Book
                       <span className="text-[11px] font-medium text-slate-400 italic">Tersedia</span>
                     )}
                   </div>
-                  {!booking && isToday && (
+                  {!booking && isAllowable && (
                     <Button size="sm" variant="outline" className="h-7 py-0 px-2 text-[10px] border-blue-400 text-blue-600" onClick={() => setIsBookingModalOpen(true)}>Tempah</Button>
                   )}
-                  {!booking && !isToday && (
+                  {!booking && !isAllowable && (
                      <span className="text-[9px] font-bold text-slate-300 uppercase tracking-tighter">Tutup</span>
                   )}
                 </div>
@@ -844,9 +856,14 @@ function BookingModal({
   const handleBooking = async () => {
     if (selectedSlots.length === 0 || !teacherName || !className || !purpose) return;
     
-    const isToday = isSameDay(date, new Date());
-    if (!isToday) {
-      alert('Maaf, tempahan hanya dibenarkan untuk hari semasa sahaja.');
+    const today = startOfToday();
+    const tomorrow = addDays(today, 1);
+    const isToday = isSameDay(date, today);
+    const isTomorrow = isSameDay(date, tomorrow);
+    const isAllowable = isToday || isTomorrow;
+
+    if (!isAllowable) {
+      alert('Maaf, tempahan hanya dibenarkan untuk hari ini dan esok sahaja.');
       return;
     }
 
@@ -1065,6 +1082,7 @@ function AdminPanelView({ bookings, settings, labs }: { bookings: Booking[], set
 function AdminApprovalsView({ bookings }: { bookings: Booking[] }) {
   const pendingBookings = bookings.filter(b => b.status === 'pending');
   const pastBookings = bookings.filter(b => b.status !== 'pending');
+  const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
 
   const handleAction = async (id: string, status: BookingStatus) => {
     const reason = status === 'rejected' ? prompt('Sila nyatakan sebab penolakan:') : '';
@@ -1082,6 +1100,12 @@ function AdminApprovalsView({ bookings }: { bookings: Booking[] }) {
 
   return (
     <div className="space-y-8">
+      {editingBooking && (
+        <EditBookingModal 
+          booking={editingBooking} 
+          onClose={() => setEditingBooking(null)} 
+        />
+      )}
       <div className="space-y-4">
         <h2 className="text-sm font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 border-b border-slate-200 pb-2">
           <AlertCircle className="text-amber-500 w-4 h-4" /> Pengesahan Diperlukan
@@ -1151,6 +1175,7 @@ function AdminApprovalsView({ bookings }: { bookings: Booking[] }) {
                   <th className="px-6 py-2.5 font-bold text-slate-400 uppercase tracking-widest">Makmal</th>
                   <th className="px-6 py-2.5 font-bold text-slate-400 uppercase tracking-widest">Masa</th>
                   <th className="px-6 py-2.5 font-bold text-slate-400 uppercase tracking-widest">Status</th>
+                  <th className="px-6 py-2.5 font-bold text-slate-400 uppercase tracking-widest text-right">Tindakan</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -1175,6 +1200,16 @@ function AdminApprovalsView({ bookings }: { bookings: Booking[] }) {
                         {b.status === 'confirmed' ? 'SIAP' : 'BATAL'}
                       </span>
                     </td>
+                    <td className="px-6 py-3 text-right">
+                      {b.status === 'confirmed' && (
+                        <button 
+                          onClick={() => setEditingBooking(b)} 
+                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors inline-flex items-center gap-1 font-bold uppercase text-[9px]"
+                        >
+                          <Pencil className="w-3 h-3" /> Edit
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -1182,6 +1217,167 @@ function AdminApprovalsView({ bookings }: { bookings: Booking[] }) {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function EditBookingModal({ 
+  booking, 
+  onClose 
+}: { 
+  booking: Booking, 
+  onClose: () => void 
+}) {
+  const [selectedSlots, setSelectedSlots] = useState<string[]>(booking.timeSlots || []);
+  const [teacherName, setTeacherName] = useState(booking.teacherName || '');
+  const [className, setClassName] = useState(booking.className || '');
+  const [purpose, setPurpose] = useState(booking.purpose || '');
+  const [loading, setLoading] = useState(false);
+
+  // We need to know other bookings on the same day for slot conflict check
+  const [dayBookings, setDayBookings] = useState<Booking[]>([]);
+
+  useEffect(() => {
+    const q = query(
+      collection(db, 'bookings'), 
+      where('date', '==', booking.date),
+      where('labId', '==', booking.labId)
+    );
+    return onSnapshot(q, (snapshot) => {
+      setDayBookings(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Booking)));
+    });
+  }, [booking.date, booking.labId]);
+
+  const toggleSlot = (slot: string) => {
+    if (selectedSlots.includes(slot)) {
+      setSelectedSlots(prev => prev.filter(s => s !== slot));
+    } else {
+      if (selectedSlots.length >= 3) {
+        alert('Maksimum 3 slot masa sahaja.');
+        return;
+      }
+      setSelectedSlots(prev => [...prev].concat(slot).sort());
+    }
+  };
+
+  const handleUpdate = async () => {
+    if (selectedSlots.length === 0 || !teacherName || !className || !purpose) return;
+    
+    setLoading(true);
+    try {
+      await updateDoc(doc(db, 'bookings', booking.id), {
+        timeSlots: selectedSlots,
+        teacherName,
+        className,
+        purpose,
+        updatedAt: serverTimestamp()
+      });
+      onClose();
+    } catch (err) {
+      console.error(err);
+      alert('Gagal mengemaskini tempahan.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const isFormValid = selectedSlots.length > 0 && teacherName && className && purpose;
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-md">
+      <motion.div 
+        initial={{ scale: 0.95, opacity: 0, y: 20 }} 
+        animate={{ scale: 1, opacity: 1, y: 0 }} 
+        exit={{ scale: 0.95, opacity: 0, y: 20 }}
+        className="bg-white rounded-2xl p-6 sm:p-8 max-w-xl w-full relative z-10 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto"
+      >
+        <div className="mb-6 border-b border-slate-100 pb-4">
+          <h2 className="text-lg sm:text-xl font-bold tracking-tight text-slate-900 leading-tight">Kemaskini Tempahan</h2>
+          <div className="flex gap-4 mt-2">
+            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest flex items-center gap-1.5">
+              <BookOpen className="w-3 h-3 text-blue-500" /> {booking.labName}
+            </p>
+            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest flex items-center gap-1.5">
+              <CalendarIcon className="w-3 h-3 text-blue-500" /> {format(new Date(booking.date), 'dd MMMM yyyy')}
+            </p>
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+          <div className="space-y-5">
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 font-mono">01. Maklumat Guru</label>
+              <select 
+                value={teacherName} 
+                onChange={e => setTeacherName(e.target.value)}
+                className="w-full p-2.5 rounded-lg border border-slate-200 text-xs font-bold bg-slate-50 focus:bg-white focus:border-blue-500 transition-all outline-none"
+              >
+                <option value="">-- Pilih Nama --</option>
+                {TEACHERS.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 font-mono">02. Kelas Diambil</label>
+              <select 
+                value={className} 
+                onChange={e => setClassName(e.target.value)}
+                className="w-full p-2.5 rounded-lg border border-slate-200 text-xs font-bold bg-slate-50 focus:bg-white focus:border-blue-500 transition-all outline-none"
+              >
+                <option value="">-- Pilih Kelas --</option>
+                {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 font-mono">03. Tujuan Penggunaan</label>
+              <select 
+                value={purpose} 
+                onChange={e => setPurpose(e.target.value)}
+                className="w-full p-2.5 rounded-lg border border-slate-200 text-xs font-bold bg-slate-50 focus:bg-white focus:border-blue-500 transition-all outline-none"
+              >
+                <option value="">-- Pilih Tujuan --</option>
+                {PURPOSES.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 font-mono">04. Slot Masa (Maksimum 3)</label>
+            <div className="grid grid-cols-2 gap-1.5 overflow-y-auto max-h-[220px] pr-1 scrollbar-thin">
+              {TIME_SLOTS.map(slot => {
+                 // Taken by OTHER bookings (excluding this one)
+                 const isTaken = dayBookings.some(b => b.id !== booking.id && b.status === 'confirmed' && b.timeSlots?.includes(slot));
+                 const isSelected = selectedSlots.includes(slot);
+                 return (
+                  <button
+                    key={slot}
+                    disabled={isTaken}
+                    onClick={() => toggleSlot(slot)}
+                    className={cn(
+                      'p-2 rounded-lg border text-[9px] font-bold transition-all text-center leading-tight flex items-center justify-center h-10',
+                      isTaken 
+                        ? 'bg-slate-50 border-slate-100 text-slate-300 cursor-not-allowed line-through'
+                        : isSelected
+                          ? 'border-blue-600 bg-blue-600 text-white shadow-lg shadow-blue-100' 
+                          : 'border-slate-100 hover:border-blue-200 text-slate-500 bg-white'
+                    )}
+                  >
+                    {slot}
+                  </button>
+                 );
+              })}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex gap-3 pt-4 border-t border-slate-100">
+          <Button variant="secondary" className="flex-1 font-bold py-3 text-xs uppercase" onClick={onClose} disabled={loading}>Batal</Button>
+          <Button className="flex-1 font-bold py-3 text-xs uppercase" onClick={handleUpdate} disabled={!isFormValid || loading}>
+            {loading ? 'Mengemaskini...' : 'Simpan Kemaskini'}
+          </Button>
+        </div>
+      </motion.div>
     </div>
   );
 }
