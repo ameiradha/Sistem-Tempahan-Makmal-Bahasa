@@ -1465,12 +1465,15 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
     e.preventDefault();
     setSaving(true);
     try {
-      // Save global public settings
-      await setDoc(doc(db, 'settings', 'global'), {
+      // Save everything to global settings in one go
+      const globalData = {
         systemName: form.systemName,
         systemDescription: form.systemDescription,
-        logoUrl: form.logoUrl
-      });
+        logoUrl: form.logoUrl,
+        telegramBotToken: form.telegramBotToken || '',
+        telegramChatId: form.telegramChatId || ''
+      };
+      await setDoc(doc(db, 'settings', 'global'), globalData);
       
       // Save security settings if changed
       const securityUpdate: any = {};
@@ -1479,16 +1482,6 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
       if (Object.keys(securityUpdate).length > 0) {
         await setDoc(doc(db, 'settings', 'security'), securityUpdate);
       }
-
-      // Save telegram settings to global
-      const globalUpdate = {
-        systemName: form.systemName,
-        systemDescription: form.systemDescription,
-        logoUrl: form.logoUrl,
-        telegramBotToken: form.telegramBotToken || '',
-        telegramChatId: form.telegramChatId || ''
-      };
-      await setDoc(doc(db, 'settings', 'global'), globalUpdate);
       
       alert('Tetapan berjaya disimpan!');
     } catch (err) {
@@ -1645,7 +1638,7 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
                 />
               </div>
               <p className="text-[9px] text-slate-400 font-medium italic">
-                Dapatkan Bot Token melalui @BotFather dan Chat ID melalui @userinfobot di Telegram.
+                Dapatkan Bot Token melalui @BotFather. Chat ID adalah ID akaun Telegram anda (guna @userinfobot) atau ID Group (bukan ID Bot).
               </p>
             </div>
           </div>
