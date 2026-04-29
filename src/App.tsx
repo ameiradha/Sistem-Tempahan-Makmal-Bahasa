@@ -894,7 +894,7 @@ function BookingModal({
         createdAt: serverTimestamp()
       };
 
-      await addDoc(collection(db, 'bookings'), bookingData);
+      const docRef = await addDoc(collection(db, 'bookings'), bookingData);
 
       // Send Telegram Notification if configured
       if (settings.telegramBotToken && settings.telegramChatId) {
@@ -912,7 +912,15 @@ function BookingModal({
           body: JSON.stringify({
             chat_id: settings.telegramChatId,
             text: message,
-            parse_mode: 'Markdown'
+            parse_mode: 'Markdown',
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  { text: '✅ Lulus', callback_data: `approve:${docRef.id}` },
+                  { text: '❌ Batal', callback_data: `reject:${docRef.id}` }
+                ]
+              ]
+            }
           })
         }).catch(err => console.error('Telegram notification failed:', err));
       }
