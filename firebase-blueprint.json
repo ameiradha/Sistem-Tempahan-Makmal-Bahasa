@@ -19,7 +19,9 @@
       "properties": {
         "systemName": { "type": "string" },
         "systemDescription": { "type": "string" },
-        "logoUrl": { "type": "string" }
+        "logoUrl": { "type": "string" },
+        "telegramBotToken": { "type": "string" },
+        "telegramChatId": { "type": "string" }
       },
       "required": ["systemName", "systemDescription", "logoUrl"]
     },

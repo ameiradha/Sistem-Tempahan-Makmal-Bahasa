@@ -153,40 +153,43 @@ export default function App() {
 
   // Sync Settings
   useEffect(() => {
+    // Sync Global Settings
     const unsubGlobal = onSnapshot(doc(db, 'settings', 'global'), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
         setSettings(prev => ({ ...prev, ...data }));
-      } else {
+      } else if (profile?.role === 'teacher') {
         setDoc(doc(db, 'settings', 'global'), {
           systemName: 'Sistem Tempahan Makmal Bahasa SKBJ',
           systemDescription: 'Pengurusan Tempahan Berpusat',
-          logoUrl: ''
+          logoUrl: '',
+          telegramBotToken: '',
+          telegramChatId: ''
         });
       }
     });
 
-    // Everyone can sync security settings now if needed for notifications, 
-    // but we only want to read BotToken/ChatId for the Modal
-    const unsubSecurity = onSnapshot(doc(db, 'settings', 'security'), (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setSettings(prev => ({ 
-          ...prev, 
-          adminPassword: data.password,
-          telegramBotToken: data.telegramBotToken,
-          telegramChatId: data.telegramChatId
-        }));
-      } else {
-        setDoc(doc(db, 'settings', 'security'), { password: 'admin123' });
-      }
-    });
+    // Only teachers (admins) can sync security settings (password)
+    let unsubSecurity = () => {};
+    if (profile?.role === 'teacher') {
+      unsubSecurity = onSnapshot(doc(db, 'settings', 'security'), (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          setSettings(prev => ({ 
+            ...prev, 
+            adminPassword: data.password
+          }));
+        } else {
+          setDoc(doc(db, 'settings', 'security'), { password: 'admin123' });
+        }
+      });
+    }
 
     return () => {
       unsubGlobal();
       unsubSecurity();
     };
-  }, []);
+  }, [profile]);
 
   // Auth Listener
   useEffect(() => {
@@ -1472,12 +1475,20 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
       // Save security settings if changed
       const securityUpdate: any = {};
       if (form.adminPassword) securityUpdate.password = form.adminPassword;
-      if (form.telegramBotToken) securityUpdate.telegramBotToken = form.telegramBotToken;
-      if (form.telegramChatId) securityUpdate.telegramChatId = form.telegramChatId;
 
       if (Object.keys(securityUpdate).length > 0) {
         await setDoc(doc(db, 'settings', 'security'), securityUpdate);
       }
+
+      // Save telegram settings to global
+      const globalUpdate = {
+        systemName: form.systemName,
+        systemDescription: form.systemDescription,
+        logoUrl: form.logoUrl,
+        telegramBotToken: form.telegramBotToken || '',
+        telegramChatId: form.telegramChatId || ''
+      };
+      await setDoc(doc(db, 'settings', 'global'), globalUpdate);
       
       alert('Tetapan berjaya disimpan!');
     } catch (err) {
