@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import admin from 'firebase-admin';
 import { getFirestore } from 'firebase-admin/firestore';
+import fetch from 'node-fetch';
 import firebaseConfig from './firebase-applet-config.json' with { type: 'json' };
 
 const __filename = fileURLToPath(import.meta.url);
@@ -26,6 +27,7 @@ async function startServer() {
 
   // API Route for Telegram Webhook
   app.post('/api/telegram-webhook', async (req, res) => {
+    console.log('Received Telegram Webhook Payload');
     const { callback_query } = req.body;
 
     if (!callback_query) {
@@ -82,21 +84,27 @@ async function startServer() {
   // API to setup Webhook
   app.get('/api/setup-telegram-webhook', async (req, res) => {
     const { token, url } = req.query;
+    
     if (!token || !url) {
+      console.warn('Setup Webhook attempt with missing token or URL');
       return res.status(400).json({ ok: false, description: 'Token and URL are required' });
     }
 
     try {
       const tokenStr = String(token);
       const urlStr = String(url);
-      console.log(`Setting up webhook for bot: ${tokenStr.slice(0, 5)}... with URL: ${urlStr}/api/telegram-webhook`);
-      const tgRes = await fetch(`https://api.telegram.org/bot${tokenStr}/setWebhook?url=${urlStr}/api/telegram-webhook`);
+      const webhookUrl = `${urlStr}/api/telegram-webhook`;
+      
+      console.log(`Setting up webhook for bot: ${tokenStr.slice(0, 5)}... with URL: ${webhookUrl}`);
+      
+      const tgRes = await fetch(`https://api.telegram.org/bot${tokenStr}/setWebhook?url=${encodeURI(webhookUrl)}`);
       const data = await tgRes.json();
+      
       console.log('Telegram API Response:', data);
       res.json(data);
     } catch (err: any) {
-      console.error('Setup Webhook Error:', err);
-      res.status(500).json({ ok: false, description: err.message });
+      console.error('Setup Webhook Internal Error:', err);
+      res.status(500).json({ ok: false, description: err.message || 'Internal Server Error' });
     }
   });
 
@@ -124,5 +132,10 @@ async function startServer() {
     console.log(`Server running on http://0.0.0.0:${PORT}`);
   });
 }
+
+// Global error handling for unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
 
 startServer();

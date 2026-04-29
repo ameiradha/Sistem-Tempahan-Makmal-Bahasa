@@ -1655,21 +1655,34 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
                     type="button"
                     disabled={saving}
                     onClick={async () => {
+                      if (!form.telegramBotToken) {
+                        alert('❌ Sila isi Bot Token terlebih dahulu.');
+                        return;
+                      }
                       try {
                         const url = window.location.origin;
-                        const res = await fetch(`/api/setup-telegram-webhook?token=${encodeURIComponent(form.telegramBotToken)}&url=${encodeURIComponent(url)}`);
+                        console.log('Requesting Webhook setup with token and origin:', { url });
+                        
+                        const apiUrl = `/api/setup-telegram-webhook?token=${encodeURIComponent(form.telegramBotToken)}&url=${encodeURIComponent(url)}`;
+                        const res = await fetch(apiUrl);
+                        
+                        if (!res.ok) {
+                          const errorData = await res.json().catch(() => ({ description: 'Server Error' }));
+                          throw new Error(errorData.description || `HTTP ${res.status}`);
+                        }
+
                         const data = await res.json();
                         if (data.ok) {
-                          alert('✅ Webhook Berjaya! Bot kini boleh menerima arahan Lulus/Tolak.');
+                          alert('✅ Berhasil! Webhook telegram telah diaktifkan.\n\nAnda kini boleh meluluskan atau menolak tempahan terus dari Telegram.');
                         } else {
-                          alert(`❌ Ralat: ${data.description || 'Gagal menyambung ke Telegram.'}\n\nPastikan Bot Token anda betul.`);
+                          alert(`❌ Gagal: ${data.description || 'Sila semak Bot Token anda.'}`);
                         }
                       } catch (err: any) {
                         console.error('Webhook Setup Interaction Error:', err);
-                        alert(`❌ Ralat Rangkaian: ${err.message || 'Sila cuba lagi.'}\n\nPastikan anda telah klik butang "SIMPAN SEMUA TETAPAN" di bawah terlebih dahulu.`);
+                        alert(`❌ Ralat: ${err.message || 'Sila cuba lagi.'}\n\nPastikan anda telah klik butang "SIMPAN SEMUA TETAPAN" (di bawah) sekurang-kurangnya sekali sebelum klik butang ini.`);
                       }
                     }}
-                    className="w-full p-2.5 bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest rounded-lg hover:bg-blue-700 transition-all shadow-sm active:scale-95 disabled:opacity-50"
+                    className="w-full p-3 bg-indigo-600 text-white text-[11px] font-black uppercase tracking-widest rounded-xl hover:bg-indigo-700 active:scale-[0.98] transition-all shadow-md disabled:opacity-50"
                   >
                     Aktifkan Webhook Butang Bot
                   </button>
