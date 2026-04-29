@@ -1666,9 +1666,15 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
                         const apiUrl = `/api/setup-telegram-webhook?token=${encodeURIComponent(form.telegramBotToken)}&url=${encodeURIComponent(url)}`;
                         const res = await fetch(apiUrl);
                         
+                        const contentType = res.headers.get('content-type');
+                        if (!contentType || !contentType.includes('application/json')) {
+                          console.error('Unexpected non-JSON response:', await res.text().catch(() => 'No body'));
+                          throw new Error('Server tidak membalas dalam format yang betul (JSON expected). Sila Refresh halaman dan cuba lagi.');
+                        }
+
                         if (!res.ok) {
-                          const errorData = await res.json().catch(() => ({ description: 'Server Error' }));
-                          throw new Error(errorData.description || `HTTP ${res.status}`);
+                          const errorData = await res.json().catch(() => ({ description: 'Internal Server Error' }));
+                          throw new Error(errorData.description || `Ralat Server (${res.status})`);
                         }
 
                         const data = await res.json();

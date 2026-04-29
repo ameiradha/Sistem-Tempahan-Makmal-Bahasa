@@ -2,13 +2,16 @@ import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
 import admin from 'firebase-admin';
 import { getFirestore } from 'firebase-admin/firestore';
-import fetch from 'node-fetch';
-import firebaseConfig from './firebase-applet-config.json' with { type: 'json' };
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Load Firebase Config safely
+const firebaseConfigPath = path.join(process.cwd(), 'firebase-applet-config.json');
+const firebaseConfig = JSON.parse(fs.readFileSync(firebaseConfigPath, 'utf8'));
 
 // Initialize Firebase Admin
 if (!admin.apps.length) {
@@ -24,6 +27,17 @@ async function startServer() {
   const PORT = 3000;
 
   app.use(express.json());
+
+  // Log all requests for debugging
+  app.use((req, res, next) => {
+    console.log(`${req.method} ${req.url}`);
+    next();
+  });
+
+  // API Health Check
+  app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok', time: new Date().toISOString() });
+  });
 
   // API Route for Telegram Webhook
   app.post('/api/telegram-webhook', async (req, res) => {
@@ -97,20 +111,27 @@ async function startServer() {
       
       console.log(`Setting up webhook for bot: ${tokenStr.slice(0, 5)}... with URL: ${webhookUrl}`);
       
+      // Use global fetch (built-in in Node 18+)
+      // @ts-ignore
       const tgRes = await fetch(`https://api.telegram.org/bot${tokenStr}/setWebhook?url=${encodeURI(webhookUrl)}`);
       const data = await tgRes.json();
       
       console.log('Telegram API Response:', data);
-      res.json(data);
+      return res.json(data);
     } catch (err: any) {
       console.error('Setup Webhook Internal Error:', err);
-      res.status(500).json({ ok: false, description: err.message || 'Internal Server Error' });
+      return res.status(500).json({ ok: false, description: err.message || 'Internal Server Error' });
     }
   });
 
-  // API Health Check
-  app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok' });
+  // Handle a recurring issue: browser asking for health check or setup with trailing slash
+  app.get('/api/setup-telegram-webhook/', (req, res) => {
+    res.redirect(301, req.url.slice(0, -1));
+  });
+
+  // Catch-all for API routes to prevent HTML 404s
+  app.all('/api/*', (req, res) => {
+    res.status(404).json({ ok: false, description: `Route ${req.method} ${req.url} not found` });
   });
 
   // Vite middleware for development
