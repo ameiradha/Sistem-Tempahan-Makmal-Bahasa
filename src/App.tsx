@@ -917,7 +917,7 @@ function BookingModal({
               inline_keyboard: [
                 [
                   { text: '✅ Lulus', callback_data: `approve:${docRef.id}` },
-                  { text: '❌ Batal', callback_data: `reject:${docRef.id}` }
+                  { text: '❌ Tolak', callback_data: `reject:${docRef.id}` }
                 ]
               ]
             }
@@ -1648,6 +1648,35 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
               <p className="text-[9px] text-slate-400 font-medium italic">
                 Dapatkan Bot Token melalui @BotFather. Chat ID adalah ID akaun Telegram anda (guna @userinfobot) atau ID Group (bukan ID Bot).
               </p>
+              
+              {form.telegramBotToken && (
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={async () => {
+                      try {
+                        const url = window.location.origin;
+                        const res = await fetch(`/api/setup-telegram-webhook?token=${form.telegramBotToken}&url=${url}`);
+                        const data = await res.json();
+                        if (data.ok) {
+                          alert('✅ Webhook Berjaya! Bot kini boleh menerima arahan Lulus/Tolak.');
+                        } else {
+                          alert('❌ Ralat: ' + (data.description || 'Gagal menyambung ke Telegram.'));
+                        }
+                      } catch (err) {
+                        alert('❌ Ralat Rangkaian: Pastikan anda telah simpan tetapan (Save) terlebih dahulu.');
+                      }
+                    }}
+                    className="w-full p-2.5 bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest rounded-lg hover:bg-blue-700 transition-all shadow-sm active:scale-95 disabled:opacity-50"
+                  >
+                    Aktifkan Webhook Butang Bot
+                  </button>
+                  <p className="text-[8px] text-blue-500 font-bold text-center uppercase tracking-tighter">
+                    Klik butang atas jika butang Lulus/Tolak di Telegram tidak berfungsi.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 

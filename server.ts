@@ -48,7 +48,7 @@ async function startServer() {
       }
 
       const status = action === 'approve' ? 'confirmed' : 'rejected';
-      const statusText = status === 'confirmed' ? 'DILULUSKAN' : 'DIBATALKAN';
+      const statusText = status === 'confirmed' ? 'DILULUSKAN' : 'DITOLAK';
 
       await bookingRef.update({
         status,
@@ -57,10 +57,10 @@ async function startServer() {
 
       // Update original message
       const originalText = message.text;
-      const updatedText = `${originalText}\n\n✅ *STATUS: ${statusText}* (melalui Telegram)`;
+      const updatedText = `${originalText}\n\n✅ *STATUS: ${statusText}* (melalui Telegram @${callback_query.from.username || 'admin'})`;
 
       // Answer Telegram
-      res.json({
+      return res.json({
         method: 'editMessageText',
         chat_id: message.chat.id,
         message_id: message.message_id,
@@ -71,11 +71,27 @@ async function startServer() {
 
     } catch (err) {
       console.error('Webhook Error:', err);
-      res.json({
+      return res.json({
         method: 'answerCallbackQuery',
         callback_query_id: queryId,
         text: 'Ralat teknikal berlaku.'
       });
+    }
+  });
+
+  // API to setup Webhook
+  app.get('/api/setup-telegram-webhook', async (req, res) => {
+    const { token, url } = req.query;
+    if (!token || !url) {
+      return res.status(400).json({ ok: false, description: 'Token and URL are required' });
+    }
+
+    try {
+      const tgRes = await fetch(`https://api.telegram.org/bot${token}/setWebhook?url=${url}/api/telegram-webhook`);
+      const data = await tgRes.json();
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ ok: false, description: err.message });
     }
   });
 
