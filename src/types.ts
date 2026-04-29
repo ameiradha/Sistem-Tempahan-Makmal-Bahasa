@@ -11,7 +11,9 @@ export interface AppSettings {
   systemName: string;
   systemDescription: string;
   logoUrl: string;
-  adminPassword?: string; // Optional for transfer between components
+  adminPassword?: string; 
+  telegramBotToken?: string;
+  telegramChatId?: string;
 }
 
 export type BookingStatus = 'pending' | 'confirmed' | 'rejected';

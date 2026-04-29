@@ -166,23 +166,27 @@ export default function App() {
       }
     });
 
-    // Only teachers can sync security settings (password)
-    let unsubSecurity = () => {};
-    if (profile?.role === 'teacher') {
-      unsubSecurity = onSnapshot(doc(db, 'settings', 'security'), (docSnap) => {
-        if (docSnap.exists()) {
-          setSettings(prev => ({ ...prev, adminPassword: docSnap.data().password }));
-        } else {
-          setDoc(doc(db, 'settings', 'security'), { password: 'admin123' });
-        }
-      });
-    }
+    // Everyone can sync security settings now if needed for notifications, 
+    // but we only want to read BotToken/ChatId for the Modal
+    const unsubSecurity = onSnapshot(doc(db, 'settings', 'security'), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setSettings(prev => ({ 
+          ...prev, 
+          adminPassword: data.password,
+          telegramBotToken: data.telegramBotToken,
+          telegramChatId: data.telegramChatId
+        }));
+      } else {
+        setDoc(doc(db, 'settings', 'security'), { password: 'admin123' });
+      }
+    });
 
     return () => {
       unsubGlobal();
       unsubSecurity();
     };
-  }, [profile]);
+  }, []);
 
   // Auth Listener
   useEffect(() => {
@@ -430,6 +434,7 @@ export default function App() {
                     labs={labs} 
                     bookings={bookings} 
                     profile={profile} 
+                    settings={settings}
                   />
                 </motion.div>
               )}
@@ -639,7 +644,7 @@ function BookingCard({ booking }: { booking: Booking }) {
   );
 }
 
-function CalendarView({ labs, bookings, profile }: { labs: Lab[], bookings: Booking[], profile: UserProfile }) {
+function CalendarView({ labs, bookings, profile, settings }: { labs: Lab[], bookings: Booking[], profile: UserProfile, settings: AppSettings }) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState(new Date());
   const [selectedLab, setSelectedLab] = useState<Lab | null>(null);
@@ -815,6 +820,7 @@ function CalendarView({ labs, bookings, profile }: { labs: Lab[], bookings: Book
             onClose={() => setIsBookingModalOpen(false)}
             profile={profile}
             existingBookings={bookingsOnSelectedDay}
+            settings={settings}
           />
         )}
       </AnimatePresence>
@@ -827,13 +833,15 @@ function BookingModal({
   date, 
   onClose, 
   profile,
-  existingBookings 
+  existingBookings,
+  settings 
 }: { 
   lab: Lab, 
   date: Date, 
   onClose: () => void, 
   profile: UserProfile,
-  existingBookings: Booking[]
+  existingBookings: Booking[],
+  settings: AppSettings
 }) {
   const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
   const [teacherName, setTeacherName] = useState('');
@@ -869,7 +877,7 @@ function BookingModal({
 
     setLoading(true);
     try {
-      await addDoc(collection(db, 'bookings'), {
+      const bookingData = {
         labId: lab.id,
         labName: lab.name,
         date: format(date, 'yyyy-MM-dd'),
@@ -881,7 +889,31 @@ function BookingModal({
         purpose,
         status: 'pending',
         createdAt: serverTimestamp()
-      });
+      };
+
+      await addDoc(collection(db, 'bookings'), bookingData);
+
+      // Send Telegram Notification if configured
+      if (settings.telegramBotToken && settings.telegramChatId) {
+        const message = `🔔 *TEMPAHAN BARU*\n\n` +
+          `👤 *Guru:* ${teacherName}\n` +
+          `🏫 *Makmal:* ${lab.name}\n` +
+          `📅 *Tarikh:* ${format(date, 'dd/MM/yyyy')}\n` +
+          `⏰ *Slot:* ${selectedSlots.join(', ')}\n` +
+          `📚 *Kelas:* ${className}\n` +
+          `🎯 *Tujuan:* ${purpose}`;
+
+        fetch(`https://api.telegram.org/bot${settings.telegramBotToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: settings.telegramChatId,
+            text: message,
+            parse_mode: 'Markdown'
+          })
+        }).catch(err => console.error('Telegram notification failed:', err));
+      }
+
       onClose();
     } catch (err) {
       console.error(err);
@@ -1438,10 +1470,13 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
       });
       
       // Save security settings if changed
-      if (form.adminPassword) {
-        await setDoc(doc(db, 'settings', 'security'), {
-          password: form.adminPassword
-        });
+      const securityUpdate: any = {};
+      if (form.adminPassword) securityUpdate.password = form.adminPassword;
+      if (form.telegramBotToken) securityUpdate.telegramBotToken = form.telegramBotToken;
+      if (form.telegramChatId) securityUpdate.telegramChatId = form.telegramChatId;
+
+      if (Object.keys(securityUpdate).length > 0) {
+        await setDoc(doc(db, 'settings', 'security'), securityUpdate);
       }
       
       alert('Tetapan berjaya disimpan!');
@@ -1570,6 +1605,37 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
               {labs.length === 0 && (
                 <p className="text-xs text-slate-400 italic text-center py-4">Tiada makmal didaftarkan.</p>
               )}
+            </div>
+          </div>
+
+          <div className="pt-6 mt-6 border-t border-slate-100">
+            <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-blue-500"></span> Notifikasi Telegram (Percuma)
+            </h4>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Bot Token</label>
+                <input 
+                  type="password" 
+                  value={form.telegramBotToken || ''}
+                  onChange={e => setForm({...form, telegramBotToken: e.target.value})}
+                  className="w-full p-3 rounded-lg border border-slate-200 bg-white text-sm font-medium outline-none focus:border-blue-500"
+                  placeholder="Contoh: 123456789:ABCDE..."
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Chat ID</label>
+                <input 
+                  type="text" 
+                  value={form.telegramChatId || ''}
+                  onChange={e => setForm({...form, telegramChatId: e.target.value})}
+                  className="w-full p-3 rounded-lg border border-slate-200 bg-white text-sm font-medium outline-none focus:border-blue-500"
+                  placeholder="Contoh: -100123456789 atau 12345678"
+                />
+              </div>
+              <p className="text-[9px] text-slate-400 font-medium italic">
+                Dapatkan Bot Token melalui @BotFather dan Chat ID melalui @userinfobot di Telegram.
+              </p>
             </div>
           </div>
 
