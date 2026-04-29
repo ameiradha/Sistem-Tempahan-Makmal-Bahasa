@@ -1657,15 +1657,16 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
                     onClick={async () => {
                       try {
                         const url = window.location.origin;
-                        const res = await fetch(`/api/setup-telegram-webhook?token=${form.telegramBotToken}&url=${url}`);
+                        const res = await fetch(`/api/setup-telegram-webhook?token=${encodeURIComponent(form.telegramBotToken)}&url=${encodeURIComponent(url)}`);
                         const data = await res.json();
                         if (data.ok) {
                           alert('✅ Webhook Berjaya! Bot kini boleh menerima arahan Lulus/Tolak.');
                         } else {
-                          alert('❌ Ralat: ' + (data.description || 'Gagal menyambung ke Telegram.'));
+                          alert(`❌ Ralat: ${data.description || 'Gagal menyambung ke Telegram.'}\n\nPastikan Bot Token anda betul.`);
                         }
-                      } catch (err) {
-                        alert('❌ Ralat Rangkaian: Pastikan anda telah simpan tetapan (Save) terlebih dahulu.');
+                      } catch (err: any) {
+                        console.error('Webhook Setup Interaction Error:', err);
+                        alert(`❌ Ralat Rangkaian: ${err.message || 'Sila cuba lagi.'}\n\nPastikan anda telah klik butang "SIMPAN SEMUA TETAPAN" di bawah terlebih dahulu.`);
                       }
                     }}
                     className="w-full p-2.5 bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest rounded-lg hover:bg-blue-700 transition-all shadow-sm active:scale-95 disabled:opacity-50"

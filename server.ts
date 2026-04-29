@@ -87,10 +87,15 @@ async function startServer() {
     }
 
     try {
-      const tgRes = await fetch(`https://api.telegram.org/bot${token}/setWebhook?url=${url}/api/telegram-webhook`);
+      const tokenStr = String(token);
+      const urlStr = String(url);
+      console.log(`Setting up webhook for bot: ${tokenStr.slice(0, 5)}... with URL: ${urlStr}/api/telegram-webhook`);
+      const tgRes = await fetch(`https://api.telegram.org/bot${tokenStr}/setWebhook?url=${urlStr}/api/telegram-webhook`);
       const data = await tgRes.json();
+      console.log('Telegram API Response:', data);
       res.json(data);
     } catch (err: any) {
+      console.error('Setup Webhook Error:', err);
       res.status(500).json({ ok: false, description: err.message });
     }
   });
