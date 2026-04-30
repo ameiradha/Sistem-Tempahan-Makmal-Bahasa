@@ -1533,16 +1533,17 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
     if (!targetUrl) return;
 
     try {
-      const response = await fetch(`/api/setup-telegram-webhook?token=${form.telegramBotToken}&url=${targetUrl}`);
+      const response = await fetch(`/api/setup-telegram-webhook?token=${form.telegramBotToken}&url=${encodeURIComponent(targetUrl)}`);
       const data = await response.json();
+      
       if (data.ok) {
-        alert('Webhook Telegram berjaya diaktifkan!');
+        alert('Webhook Telegram berjaya diaktifkan!\nBot anda kini boleh menerima arahan Lulus/Tolak.');
       } else {
-        alert('Gagal mengaktifkan webhook: ' + (data.description || 'Ralat tidak diketahui'));
+        alert('Gagal mengaktifkan webhook: ' + (data.description || 'Ralat dari Telegram'));
       }
     } catch (err) {
-      console.error(err);
-      alert('Ralat semasa menghubungi server.');
+      console.error('Setup error:', err);
+      alert('Sistem gagal menghubungi server. Sila pastikan sistem telah siap "Deploy" atau server sedang berjalan.');
     }
   };
 

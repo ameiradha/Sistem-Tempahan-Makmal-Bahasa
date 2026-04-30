@@ -94,14 +94,20 @@ async function startServer() {
   // Webhook Setup Helper
   app.get('/api/setup-telegram-webhook', async (req, res) => {
     const { token, url } = req.query;
-    if (!token || !url) return res.status(400).send('Token and URL required');
+    if (!token || !url) return res.status(400).json({ ok: false, description: 'Token and URL required' });
 
     try {
-      const response = await fetch(`https://api.telegram.org/bot${token}/setWebhook?url=${url}/api/telegram-webhook`);
+      const webhookUrl = `${url}/api/telegram-webhook`;
+      const telegramApiUrl = `https://api.telegram.org/bot${token}/setWebhook?url=${encodeURIComponent(webhookUrl)}`;
+      
+      console.log('Setting webhook to:', webhookUrl);
+      
+      const response = await fetch(telegramApiUrl);
       const data = await response.json();
       res.json(data);
     } catch (error: any) {
-      res.status(500).send(error.message);
+      console.error('Webhook setup error:', error);
+      res.status(500).json({ ok: false, description: error.message });
     }
   });
 
