@@ -894,15 +894,27 @@ function BookingModal({
         createdAt: serverTimestamp()
       };
 
-      const docRef = await addDoc(collection(db, 'bookings'), bookingData);
-      
-      // Send Telegram Notification via Backend
+      await addDoc(collection(db, 'bookings'), bookingData);
+
+      // Send Telegram Notification if configured
       if (settings.telegramBotToken && settings.telegramChatId) {
-        fetch('/api/notify-booking', {
+        const message = `🔔 *TEMPAHAN BARU*\n\n` +
+          `👤 *Guru:* ${teacherName}\n` +
+          `🏫 *Makmal:* ${lab.name}\n` +
+          `📅 *Tarikh:* ${format(date, 'dd/MM/yyyy')}\n` +
+          `⏰ *Slot:* ${selectedSlots.join(', ')}\n` +
+          `📚 *Kelas:* ${className}\n` +
+          `🎯 *Tujuan:* ${purpose}`;
+
+        fetch(`https://api.telegram.org/bot${settings.telegramBotToken}/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ bookingId: docRef.id })
-        }).catch(err => console.error('Notification API Error:', err));
+          body: JSON.stringify({
+            chat_id: settings.telegramChatId,
+            text: message,
+            parse_mode: 'Markdown'
+          })
+        }).catch(err => console.error('Telegram notification failed:', err));
       }
 
       onClose();
@@ -1416,19 +1428,6 @@ function EditBookingModal({
 function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: Lab[] }) {
   const [form, setForm] = useState(settings);
   const [saving, setSaving] = useState(false);
-  const [isDirty, setIsDirty] = useState(false);
-
-  // Sync form with settings only if user has not modified anything
-  useEffect(() => {
-    if (!isDirty) {
-      setForm(settings);
-    }
-  }, [settings, isDirty]);
-
-  const updateForm = (updates: Partial<AppSettings>) => {
-    setForm(prev => ({ ...prev, ...updates }));
-    setIsDirty(true);
-  };
 
   const handleDeleteLab = async (id: string) => {
     if (!confirm('Adakah anda pasti mahu memadam makmal ini? Semua tempahan berkaitan mungkin terjejas.')) return;
@@ -1484,7 +1483,6 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
         await setDoc(doc(db, 'settings', 'security'), securityUpdate);
       }
       
-      setIsDirty(false); // Reset dirty state
       alert('Tetapan berjaya disimpan!');
     } catch (err) {
       console.error(err);
@@ -1506,7 +1504,7 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
               <input 
                 type="text" 
                 value={form.systemName}
-                onChange={e => updateForm({ systemName: e.target.value })}
+                onChange={e => setForm({...form, systemName: e.target.value})}
                 className="w-full p-3 rounded-lg border border-slate-200 bg-white text-sm font-medium outline-none focus:border-blue-500"
                 placeholder="Contoh: Sistem Booking Makmal Bahasa"
               />
@@ -1516,7 +1514,7 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
               <input 
                 type="text" 
                 value={form.systemDescription}
-                onChange={e => updateForm({ systemDescription: e.target.value })}
+                onChange={e => setForm({...form, systemDescription: e.target.value})}
                 className="w-full p-3 rounded-lg border border-slate-200 bg-white text-sm font-medium outline-none focus:border-blue-500"
                 placeholder="Contoh: Pengurusan Tempahan Berpusat"
               />
@@ -1538,7 +1536,7 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
                           }
                           const reader = new FileReader();
                           reader.onloadend = () => {
-                            updateForm({ logoUrl: reader.result as string });
+                            setForm({...form, logoUrl: reader.result as string});
                           };
                           reader.readAsDataURL(file);
                         }
@@ -1563,7 +1561,7 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
               {form.logoUrl && (
                 <button 
                   type="button" 
-                  onClick={() => updateForm({ logoUrl: '' })}
+                  onClick={() => setForm({...form, logoUrl: ''})}
                   className="mt-2 text-[10px] text-rose-500 font-bold uppercase hover:underline"
                 >
                   Padam Logo
@@ -1624,7 +1622,7 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
                 <input 
                   type="password" 
                   value={form.telegramBotToken || ''}
-                  onChange={e => updateForm({ telegramBotToken: e.target.value })}
+                  onChange={e => setForm({...form, telegramBotToken: e.target.value})}
                   className="w-full p-3 rounded-lg border border-slate-200 bg-white text-sm font-medium outline-none focus:border-blue-500"
                   placeholder="Contoh: 123456789:ABCDE..."
                 />
@@ -1634,7 +1632,7 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
                 <input 
                   type="text" 
                   value={form.telegramChatId || ''}
-                  onChange={e => updateForm({ telegramChatId: e.target.value })}
+                  onChange={e => setForm({...form, telegramChatId: e.target.value})}
                   className="w-full p-3 rounded-lg border border-slate-200 bg-white text-sm font-medium outline-none focus:border-blue-500"
                   placeholder="Contoh: -100123456789 atau 12345678"
                 />
@@ -1642,100 +1640,6 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
               <p className="text-[9px] text-slate-400 font-medium italic">
                 Dapatkan Bot Token melalui @BotFather. Chat ID adalah ID akaun Telegram anda (guna @userinfobot) atau ID Group (bukan ID Bot).
               </p>
-              
-              {form.telegramBotToken && (
-                <div className="space-y-2">
-                  <button
-                    type="button"
-                    disabled={saving}
-                    onClick={async () => {
-                      if (!form.telegramBotToken) {
-                        alert('❌ Sila isi Bot Token terlebih dahulu.');
-                        return;
-                      }
-                      try {
-                        const currentHost = window.location.origin;
-                        const defaultUrl = currentHost.includes('vercel.app') ? currentHost : 'https://stmb-skbj.vercel.app';
-                        const url = prompt('Sila masukkan URL penuh sistem anda (ini digunakan oleh Telegram untuk menghantar maklum balas):', defaultUrl);
-                        
-                        if (!url) return;
-                        
-                        console.log('Setting up Webhook for:', url);
-                        const apiUrl = `/api/setup-telegram-webhook?token=${encodeURIComponent(form.telegramBotToken)}&url=${encodeURIComponent(url)}`;
-                        const res = await fetch(apiUrl);
-                        const responseText = await res.text();
-                        
-                        let data;
-                        try {
-                          data = JSON.parse(responseText);
-                        } catch (e) {
-                          console.error('Bukan JSON:', responseText);
-                          if (responseText.includes('<!DOCTYPE html>') || responseText.includes('<html')) {
-                            throw new Error('Server sedang dimulakan semula (restarting). Sila tunggu 15 saat dan tekan butang ini sekali lagi.');
-                          }
-                          throw new Error(`Maklum balas server tidak sah. Sila Refresh halaman dan cuba lagi.`);
-                        }
-
-                        if (!res.ok) {
-                          throw new Error(data.description || `Ralat Server (${res.status})`);
-                        }
-                        if (data.ok) {
-                          alert('✅ BERHASIL!\n\nWebhook Telegram telah diaktifkan. Anda kini boleh mula meluluskan sebarang tempahan baru melalui butang di Telegram.');
-                        } else {
-                          alert(`❌ GAGAL: ${data.description || 'Sila semak semula Bot Token anda.'}`);
-                        }
-                      } catch (err: any) {
-                        console.error('Webhook Setup Interaction Error:', err);
-                        alert(`❌ Ralat: ${err.message || 'Sila cuba lagi.'}\n\nPastikan anda telah klik butang "SIMPAN SEMUA TETAPAN" (di bawah) sekurang-kurangnya sekali sebelum klik butang ini.`);
-                      }
-                    }}
-                    className="w-full p-3 bg-indigo-600 text-white text-[11px] font-black uppercase tracking-widest rounded-xl hover:bg-indigo-700 active:scale-[0.98] transition-all shadow-md disabled:opacity-50"
-                  >
-                    Aktifkan Webhook Butang Bot
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={saving}
-                    onClick={async () => {
-                      if (!form.telegramBotToken || !form.telegramChatId) {
-                        alert('❌ Sila isi Bot Token DAN Chat ID terlebih dahulu.');
-                        return;
-                      }
-                      try {
-                        const apiUrl = `/api/test-telegram-bot?token=${encodeURIComponent(form.telegramBotToken)}&chatId=${encodeURIComponent(form.telegramChatId)}`;
-                        const res = await fetch(apiUrl);
-                        const responseText = await res.text();
-                        
-                        let data;
-                        try {
-                          data = JSON.parse(responseText);
-                        } catch (e) {
-                          if (responseText.includes('<!DOCTYPE html>') || responseText.includes('<html')) {
-                            throw new Error('Server sedang dimulakan semula (restarting). Sila tunggu 15 saat dan cuba lagi.');
-                          }
-                          throw new Error(`Maklum balas server tidak sah. Sila Refresh halaman dan cuba lagi.`);
-                        }
-
-                        if (data.ok) {
-                          alert('✅ Mesej Ujian Dihantar! Sila semak Telegram bot anda.\n\nKlik butang Lulus/Tolak pada mesej ujian tersebut untuk melihat maklum-balas sistem.');
-                        } else {
-                          alert(`❌ Gagal: ${data.description || 'Sila semak Bot Token & Chat ID.'}`);
-                        }
-                      } catch (err: any) {
-                        alert(`❌ Ralat: ${err.message || 'Sila cuba lagi.'}`);
-                      }
-                    }}
-                    className="w-full p-3 bg-slate-800 text-white text-[11px] font-black uppercase tracking-widest rounded-xl hover:bg-slate-900 active:scale-[0.98] transition-all shadow-md disabled:opacity-50 border border-slate-700"
-                  >
-                    🚀 Hantar Bot Testing
-                  </button>
-
-                  <p className="text-[8px] text-blue-500 font-bold text-center uppercase tracking-tighter">
-                    Klik butang atas jika butang Lulus/Tolak di Telegram tidak berfungsi.
-                  </p>
-                </div>
-              )}
             </div>
           </div>
 
@@ -1747,7 +1651,7 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
                 <input 
                   type="password" 
                   value={form.adminPassword || ''}
-                  onChange={e => updateForm({ adminPassword: e.target.value })}
+                  onChange={e => setForm({...form, adminPassword: e.target.value})}
                   className="w-full p-3 rounded-lg border border-slate-200 bg-white text-sm font-medium outline-none focus:border-blue-500"
                   placeholder="Sila masukkan kata laluan baru..."
                 />
