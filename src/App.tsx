@@ -1654,9 +1654,13 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
                         return;
                       }
                       try {
-                        const url = window.location.origin;
-                        console.log('Requesting Webhook setup with token and origin:', { url });
+                        const currentHost = window.location.origin;
+                        const defaultUrl = currentHost.includes('vercel.app') ? currentHost : 'https://stmb-skbj.vercel.app';
+                        const url = prompt('Sila masukkan URL penuh sistem anda (ini digunakan oleh Telegram untuk menghantar maklum balas):', defaultUrl);
                         
+                        if (!url) return;
+                        
+                        console.log('Setting up Webhook for:', url);
                         const apiUrl = `/api/setup-telegram-webhook?token=${encodeURIComponent(form.telegramBotToken)}&url=${encodeURIComponent(url)}`;
                         const res = await fetch(apiUrl);
                         const responseText = await res.text();
