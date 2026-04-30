@@ -1533,8 +1533,16 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
     if (!targetUrl) return;
 
     try {
-      const response = await fetch(`/api/setup-telegram-webhook?token=${form.telegramBotToken}&url=${encodeURIComponent(targetUrl)}`);
-      const data = await response.json();
+      const resp = await fetch(`/api/setup-telegram-webhook?token=${form.telegramBotToken}&url=${encodeURIComponent(targetUrl)}`);
+      
+      if (!resp.ok) {
+        const errorText = await resp.text();
+        console.error('Server error:', resp.status, errorText);
+        alert(`Ralat Server (${resp.status}): ${errorText || 'Gagal menyambung ke API'}`);
+        return;
+      }
+
+      const data = await resp.json();
       
       if (data.ok) {
         alert('Webhook Telegram berjaya diaktifkan!\nBot anda kini boleh menerima arahan Lulus/Tolak.');
@@ -1542,8 +1550,8 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
         alert('Gagal mengaktifkan webhook: ' + (data.description || 'Ralat dari Telegram'));
       }
     } catch (err) {
-      console.error('Setup error:', err);
-      alert('Sistem gagal menghubungi server. Sila pastikan sistem telah siap "Deploy" atau server sedang berjalan.');
+      console.error('Setup error details:', err);
+      alert('Sistem gagal menghubungi server (Network Error).\n\nPastikan:\n1. Anda telah klik "Simpan Tetapan" terlebih dahulu.\n2. Server Express sedang berjalan (Status: "Ready" di Vercel).');
     }
   };
 

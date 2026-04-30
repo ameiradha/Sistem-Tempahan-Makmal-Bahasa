@@ -8,18 +8,27 @@ import fs from 'fs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Initialize Firebase Admin
-const firebaseConfigFile = path.join(__dirname, 'firebase-applet-config.json');
-const firebaseConfig = JSON.parse(fs.readFileSync(firebaseConfigFile, 'utf-8'));
+// Initialize Firebase Admin with error handling
+let db: any;
+try {
+  const firebaseConfigFile = path.join(__dirname, 'firebase-applet-config.json');
+  if (fs.existsSync(firebaseConfigFile)) {
+    const firebaseConfig = JSON.parse(fs.readFileSync(firebaseConfigFile, 'utf-8'));
+    admin.initializeApp({
+      projectId: firebaseConfig.projectId,
+    });
+    db = getFirestore(firebaseConfig.firestoreDatabaseId);
+    console.log('Firebase Admin initialized successfully');
+  } else {
+    console.warn('Warning: firebase-applet-config.json not found. Firestore features will be limited.');
+  }
+} catch (error) {
+  console.error('Firebase Admin initialization error:', error);
+}
 
-admin.initializeApp({
-  projectId: firebaseConfig.projectId,
-});
-
-const db = getFirestore(firebaseConfig.firestoreDatabaseId);
+const app = express();
 
 async function startServer() {
-  const app = express();
   const PORT = 3000;
 
   app.use(express.json());
@@ -138,5 +147,10 @@ async function startServer() {
   });
 }
 
-// Ensure server starts in the current environment
-startServer();
+// Only start the server loop if not in a Vercel environment
+if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
+  startServer();
+}
+
+// Export the app for Vercel
+export default app;
