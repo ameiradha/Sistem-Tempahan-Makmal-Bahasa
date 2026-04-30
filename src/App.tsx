@@ -895,34 +895,14 @@ function BookingModal({
       };
 
       const docRef = await addDoc(collection(db, 'bookings'), bookingData);
-
-      // Send Telegram Notification if configured
+      
+      // Send Telegram Notification via Backend
       if (settings.telegramBotToken && settings.telegramChatId) {
-        const message = `🔔 *TEMPAHAN BARU*\n\n` +
-          `👤 *Guru:* ${teacherName}\n` +
-          `🏫 *Makmal:* ${lab.name}\n` +
-          `📅 *Tarikh:* ${format(date, 'dd/MM/yyyy')}\n` +
-          `⏰ *Slot:* ${selectedSlots.join(', ')}\n` +
-          `📚 *Kelas:* ${className}\n` +
-          `🎯 *Tujuan:* ${purpose}`;
-
-        fetch(`https://api.telegram.org/bot${settings.telegramBotToken}/sendMessage`, {
+        fetch('/api/notify-booking', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: settings.telegramChatId,
-            text: message,
-            parse_mode: 'Markdown',
-            reply_markup: {
-              inline_keyboard: [
-                [
-                  { text: '✅ Lulus', callback_data: `approve:${docRef.id}` },
-                  { text: '❌ Tolak', callback_data: `reject:${docRef.id}` }
-                ]
-              ]
-            }
-          })
-        }).catch(err => console.error('Telegram notification failed:', err));
+          body: JSON.stringify({ bookingId: docRef.id })
+        }).catch(err => console.error('Notification API Error:', err));
       }
 
       onClose();

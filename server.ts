@@ -186,6 +186,62 @@ async function startServer() {
       });
     }
   });
+  
+  // API to send booking notification (Server-side to avoid CORS and hide token)
+  app.post('/api/notify-booking', async (req, res) => {
+    const { bookingId } = req.body;
+    res.setHeader('Content-Type', 'application/json');
+
+    if (!bookingId) {
+      return res.status(400).json({ ok: false, description: 'Booking ID required' });
+    }
+
+    try {
+      // Fetch settings and booking
+      const [settingsSnap, bookingSnap] = await Promise.all([
+        db.collection('settings').doc('global').get(),
+        db.collection('bookings').doc(bookingId).get()
+      ]);
+
+      const settings = settingsSnap.data() || {};
+      const booking = bookingSnap.data() || {};
+
+      if (!settings.telegramBotToken || !settings.telegramChatId) {
+        return res.json({ ok: false, description: 'Telegram not configured' });
+      }
+
+      if (!bookingSnap.exists) {
+        return res.status(404).json({ ok: false, description: 'Booking not found' });
+      }
+
+      const message = `🔔 *TEMPAHAN BARU*\n\n` +
+        `👤 *Guru:* ${booking.teacherName}\n` +
+        `🏫 *Makmal:* ${booking.labName}\n` +
+        `📅 *Tarikh:* ${booking.date}\n` +
+        `⏰ *Slot:* ${booking.timeSlots?.join(', ')}\n` +
+        `📚 *Kelas:* ${booking.className}\n` +
+        `🎯 *Tujuan:* ${booking.purpose}`;
+
+      const data = await callTelegram('sendMessage', settings.telegramBotToken, {
+        chat_id: settings.telegramChatId,
+        text: message,
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: '✅ Lulus', callback_data: `approve:${bookingId}` },
+              { text: '❌ Tolak', callback_data: `reject:${bookingId}` }
+            ]
+          ]
+        }
+      });
+
+      return res.json(data);
+    } catch (err: any) {
+      console.error('[NOTIFY ERROR]', err);
+      return res.status(500).json({ ok: false, description: err.message });
+    }
+  });
 
   // API to test Telegram Bot connection
   app.get('/api/test-telegram-bot', async (req, res) => {
