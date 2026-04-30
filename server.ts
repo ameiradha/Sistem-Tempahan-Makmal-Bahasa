@@ -9,17 +9,17 @@ import fs from 'fs';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Initialize Firebase Admin with error handling
-let firebaseConfig: any = null;
 let db: any = null;
+let firebaseConfig: any = null;
 
 try {
-  const paths = [
+  const possiblePaths = [
     path.join(process.cwd(), 'firebase-applet-config.json'),
     path.join(__dirname, 'firebase-applet-config.json'),
-    '/var/task/firebase-applet-config.json' // Common Vercel path
+    './firebase-applet-config.json'
   ];
   
-  let configPath = paths.find(p => fs.existsSync(p));
+  let configPath = possiblePaths.find(p => fs.existsSync(p));
 
   if (configPath) {
     firebaseConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
@@ -32,9 +32,9 @@ try {
     
     const dbId = firebaseConfig.firestoreDatabaseId || '(default)';
     db = getFirestore(dbId);
-    console.log(`Firebase Admin initialized. Project: ${firebaseConfig.projectId}, DB: ${dbId}`);
+    console.log(`Firebase Admin initialized: Project=${firebaseConfig.projectId}, DB=${dbId}`);
   } else {
-    console.error('CRITICAL: firebase-applet-config.json NOT FOUND in any path:', paths);
+    console.error('CRITICAL: firebase-applet-config.json not found in paths:', possiblePaths);
   }
 } catch (error) {
   console.error('Firebase Admin initialization error:', error);
@@ -46,23 +46,55 @@ const DEFAULT_BOT_TOKEN = '8707832885:AAGIzdFIDYGBsVVkR4ihKtVGDciILho0zfU';
 const app = express();
 app.use(express.json());
 
-// Helper function to update Firestore via Admin SDK (Bypassing rules)
+// Helper function to update Firestore with Fallback
 async function updateBookingStatus(bookingId: string, newStatus: string) {
-  if (!db) {
-    console.error('Database not initialized');
-    return false;
+  // Try Admin SDK First
+  if (db) {
+    try {
+      const bookingRef = db.collection('bookings').doc(bookingId);
+      await bookingRef.update({
+        status: newStatus,
+        updatedAt: FieldValue.serverTimestamp()
+      });
+      console.log(`[Admin] Booking ${bookingId} updated to ${newStatus}`);
+      return true;
+    } catch (err: any) {
+      console.warn('[Admin] Update failed, trying REST fallback...', err.message);
+    }
   }
   
+  // REST Fallback (Requires apiKey and projectId)
+  if (!firebaseConfig) return false;
+  
+  const projectId = firebaseConfig.projectId;
+  const databaseId = firebaseConfig.firestoreDatabaseId || '(default)';
+  const apiKey = firebaseConfig.apiKey;
+  
+  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${databaseId}/documents/bookings/${bookingId}?updateMask.fieldPaths=status&updateMask.fieldPaths=updatedAt&key=${apiKey}`;
+  
+  const payload = {
+    fields: {
+      status: { stringValue: newStatus },
+      updatedAt: { timestampValue: new Date().toISOString() }
+    }
+  };
+
   try {
-    const bookingRef = db.collection('bookings').doc(bookingId);
-    await bookingRef.update({
-      status: newStatus,
-      updatedAt: FieldValue.serverTimestamp()
+    const resp = await fetch(url, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
     });
-    console.log(`Booking ${bookingId} updated to ${newStatus}`);
-    return true;
+    
+    if (resp.ok) {
+      console.log(`[REST] Booking ${bookingId} updated to ${newStatus}`);
+      return true;
+    }
+    const errData = await resp.json();
+    console.error('[REST] Update failed:', errData);
+    return false;
   } catch (err) {
-    console.error('Admin Update Error:', err);
+    console.error('[REST] Update Exception:', err);
     return false;
   }
 }

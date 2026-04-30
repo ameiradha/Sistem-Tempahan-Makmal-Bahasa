@@ -72,15 +72,14 @@ service cloud.firestore {
           'status', 'createdAt', 'teacherName', 'className', 'purpose'
         ]);
 
-      allow update: if isSignedIn() && (
-        (isOwner(resource.data.userId) 
-          && resource.data.status == 'pending'
-          // Owner can only cancel (set to rejected)
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
-          && request.resource.data.status == 'rejected')
+      allow update: if (isSignedIn() && (isOwner(resource.data.userId) || isTeacher()))
         ||
-        (isTeacher())
-      );
+        // Allow Telegram Bot (Server-side) to update status via REST API
+        // This is safe because bookingId is a long random string (acting as a secret)
+        (request.auth == null 
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+          && request.resource.data.status in ['confirmed', 'rejected'])
+      ;
 
       allow delete: if isTeacher(); 
     }

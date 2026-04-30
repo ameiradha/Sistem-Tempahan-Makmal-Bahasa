@@ -1,29 +1,29 @@
 {
   "entities": {
-    "UserProfile": {
-      "title": "User Profile",
-      "description": "User profile with role",
+    "User": {
+      "title": "User",
+      "description": "User profile information",
       "type": "object",
       "properties": {
         "uid": { "type": "string" },
-        "name": { "type": "string" },
         "email": { "type": "string" },
-        "role": { "type": "string", "enum": ["teacher"] }
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["teacher", "student", "admin"] },
+        "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["uid", "name", "email", "role"]
+      "required": ["uid", "email", "role"]
     },
-    "AppSettings": {
-      "title": "App Settings",
-      "description": "Global system configuration",
+    "Lab": {
+      "title": "Lab",
+      "description": "Computer lab details",
       "type": "object",
       "properties": {
-        "systemName": { "type": "string" },
-        "systemDescription": { "type": "string" },
-        "logoUrl": { "type": "string" },
-        "telegramBotToken": { "type": "string" },
-        "telegramChatId": { "type": "string" }
+        "name": { "type": "string" },
+        "capacity": { "type": "number" },
+        "description": { "type": "string" },
+        "imageUrl": { "type": "string" }
       },
-      "required": ["systemName", "systemDescription", "logoUrl"]
+      "required": ["name"]
     },
     "Booking": {
       "title": "Booking",
@@ -32,47 +32,34 @@
       "properties": {
         "labId": { "type": "string" },
         "labName": { "type": "string" },
-        "date": { "type": "string", "format": "date" },
-        "timeSlots": { "type": "array", "items": { "type": "string" } },
         "userId": { "type": "string" },
         "userName": { "type": "string" },
-        "teacherName": { "type": "string" },
-        "className": { "type": "string" },
+        "date": { "type": "string" },
+        "timeSlots": { "type": "array" },
         "purpose": { "type": "string" },
         "status": { "type": "string", "enum": ["pending", "confirmed", "rejected"] },
-        "reason": { "type": "string" },
-        "createdAt": { "type": "object" }
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["labId", "labName", "date", "timeSlots", "userId", "userName", "status", "createdAt", "teacherName", "className", "purpose"]
-    },
-    "Lab": {
-      "title": "Lab",
-      "description": "Laboratory information",
-      "type": "object",
-      "properties": {
-        "name": { "type": "string" },
-        "capacity": { "type": "number" },
-        "description": { "type": "string" }
-      },
-      "required": ["name"]
+      "required": ["labId", "userId", "status", "date"]
     }
   },
   "firestore": {
     "/users/{userId}": {
-      "schema": "UserProfile",
+      "schema": "User",
       "description": "User profiles"
     },
     "/labs/{labId}": {
       "schema": "Lab",
-      "description": "Laboratory definitions"
+      "description": "Computer labs"
     },
     "/bookings/{bookingId}": {
       "schema": "Booking",
-      "description": "Booking records"
+      "description": "Lab bookings"
     },
-    "/settings/{docId}": {
-      "schema": "AppSettings",
-      "description": "Global application settings"
+    "/settings/global": {
+      "schema": { "type": "object" },
+      "description": "Global app settings including Telegram token"
     }
   }
 }
