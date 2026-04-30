@@ -46,6 +46,8 @@ import {
   Pencil
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { 
   format, 
   startOfMonth, 
@@ -1032,7 +1034,7 @@ function AdminPanelView({ bookings, settings, labs }: { bookings: Booking[], set
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [adminPass, setAdminPass] = useState('');
   const [error, setError] = useState('');
-  const [adminTab, setAdminTab] = useState<'approvals' | 'settings'>('approvals');
+  const [adminTab, setAdminTab] = useState<'approvals' | 'settings' | 'reports'>('approvals');
 
   const adminSecret = settings.adminPassword || "admin123";
 
@@ -1099,17 +1101,32 @@ function AdminPanelView({ bookings, settings, labs }: { bookings: Booking[], set
           >
             Tetapan Sistem
           </button>
+          <button 
+            onClick={() => setAdminTab('reports')}
+            className={cn(
+              "px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all",
+              adminTab === 'reports' ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+            )}
+          >
+            Laporan
+          </button>
         </div>
       </div>
 
       <AnimatePresence mode="wait">
-        {adminTab === 'approvals' ? (
+        {adminTab === 'approvals' && (
           <motion.div key="approvals" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }}>
             <AdminApprovalsView bookings={bookings} />
           </motion.div>
-        ) : (
+        )}
+        {adminTab === 'settings' && (
           <motion.div key="settings" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }}>
             <AdminSettingsView settings={settings} labs={labs} />
+          </motion.div>
+        )}
+        {adminTab === 'reports' && (
+          <motion.div key="reports" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }}>
+            <AdminReportsView bookings={bookings} settings={settings} />
           </motion.div>
         )}
       </AnimatePresence>
@@ -1671,6 +1688,170 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
           </div>
         </form>
       </Card>
+    </div>
+  );
+}
+
+function AdminReportsView({ bookings, settings }: { bookings: Booking[], settings: AppSettings }) {
+  const confirmedBookings = bookings.filter(b => b.status === 'confirmed');
+  const [downloading, setDownloading] = useState(false);
+
+  const generatePDF = async () => {
+    setDownloading(true);
+    try {
+      const doc = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      // Header Section
+      let startY = 25;
+      
+      // School Logo
+      if (settings.logoUrl) {
+        try {
+          doc.addImage(settings.logoUrl, 'PNG', 15, startY - 15, 25, 25);
+        } catch (e) {
+          console.error('Logo add error:', e);
+        }
+      }
+
+      // Title
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(18);
+      doc.text(settings.systemName, 45, startY - 5);
+      
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(12);
+      doc.text('Laporan Tempahan Makmal Bahasa Berjaya (Approved)', 45, startY + 2);
+      
+      doc.setFontSize(9);
+      doc.setTextColor(100);
+      doc.text(`Dijana pada: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, 45, startY + 8);
+      doc.setTextColor(0);
+
+      // Table Data
+      const tableData = confirmedBookings.map((b, index) => [
+        index + 1,
+        b.teacherName,
+        b.className,
+        b.timeSlots?.join(', ') || '-',
+        format(new Date(b.date), 'dd/MM/yyyy'),
+        b.purpose
+      ]);
+
+      autoTable(doc, {
+        head: [['No', 'Nama Guru', 'Kelas', 'Waktu', 'Tarikh', 'Tujuan']],
+        body: tableData,
+        startY: startY + 15,
+        theme: 'striped',
+        headStyles: { 
+          fillColor: [37, 99, 235], // Blue-600
+          textColor: [255, 255, 255],
+          fontSize: 10,
+          fontStyle: 'bold',
+          halign: 'center'
+        },
+        columnStyles: {
+          0: { cellWidth: 15, halign: 'center' },
+          1: { cellWidth: 70 },
+          2: { cellWidth: 20, halign: 'center' },
+          3: { cellWidth: 60 },
+          4: { cellWidth: 30, halign: 'center' },
+          5: { cellWidth: 'auto', halign: 'center' }
+        },
+        styles: {
+          fontSize: 9,
+          cellPadding: 4,
+          valign: 'middle',
+          font: 'helvetica'
+        },
+        margin: { left: 15, right: 15 }
+      });
+
+      doc.save(`Laporan_Tempahan_${format(new Date(), 'yyyyMMdd_HHmm')}.pdf`);
+    } catch (error) {
+      console.error('PDF Generation failed:', error);
+      alert('Gagal menjana laporan PDF.');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card className="p-8">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div>
+            <h3 className="text-xl font-bold text-slate-800">Muat Turun Laporan</h3>
+            <p className="text-sm text-slate-500 mt-1">Jana laporan tempahan lengkap dalam format PDF (Landscape).</p>
+            <div className="mt-4 flex gap-4">
+              <div className="px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg">
+                <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest">Jumlah Approved</p>
+                <p className="text-lg font-bold text-slate-900">{confirmedBookings.length}</p>
+              </div>
+            </div>
+          </div>
+          
+          <Button 
+            onClick={generatePDF} 
+            disabled={downloading || confirmedBookings.length === 0}
+            className="h-14 px-8 gap-3 text-sm font-bold shadow-lg shadow-blue-100"
+          >
+            {downloading ? (
+              <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }} className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full" />
+            ) : (
+              <Plus className="w-5 h-5" /> 
+            )}
+            {downloading ? 'Sila Tunggu...' : 'Download Laporan PDF'}
+          </Button>
+        </div>
+
+        {confirmedBookings.length === 0 && (
+          <div className="mt-8 p-4 bg-amber-50 border border-amber-100 rounded-lg flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-amber-500" />
+            <p className="text-xs text-amber-700 font-medium">Tiada tempahan yang telah diluluskan (Approved) untuk dipaparkan dalam laporan.</p>
+          </div>
+        )}
+      </Card>
+
+      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+        <div className="p-4 border-b border-slate-100 bg-slate-50/50">
+          <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Pratonton Data Laporan (Approved Sahaja)</h4>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-[11px]">
+            <thead>
+              <tr className="bg-white border-b border-slate-200">
+                <th className="px-6 py-3 font-bold text-slate-400 uppercase tracking-widest w-12 text-center">No</th>
+                <th className="px-6 py-3 font-bold text-slate-400 uppercase tracking-widest">Nama Guru</th>
+                <th className="px-6 py-3 font-bold text-slate-400 uppercase tracking-widest text-center">Kelas</th>
+                <th className="px-6 py-3 font-bold text-slate-400 uppercase tracking-widest">Waktu</th>
+                <th className="px-6 py-3 font-bold text-slate-400 uppercase tracking-widest text-center">Tarikh</th>
+                <th className="px-6 py-3 font-bold text-slate-400 uppercase tracking-widest">Tujuan</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {confirmedBookings.map((b, index) => (
+                <tr key={b.id} className="hover:bg-slate-50/50 transition-colors">
+                  <td className="px-6 py-3 text-center font-mono text-slate-400">{index + 1}</td>
+                  <td className="px-6 py-3 font-bold text-slate-800 uppercase">{b.teacherName}</td>
+                  <td className="px-6 py-3 text-center font-bold text-blue-600">{b.className}</td>
+                  <td className="px-6 py-3 text-slate-500 font-medium">{b.timeSlots?.join(', ')}</td>
+                  <td className="px-6 py-3 text-center text-slate-500">{format(new Date(b.date), 'dd/MM/yyyy')}</td>
+                  <td className="px-6 py-3 text-slate-500 uppercase font-medium">{b.purpose}</td>
+                </tr>
+              ))}
+              {confirmedBookings.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-6 py-10 text-center text-slate-400 font-medium">Tiada data untuk dipaparkan.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }
