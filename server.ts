@@ -13,9 +13,16 @@ let firebaseConfig: any = null;
 let db: any = null;
 
 try {
-  const firebaseConfigFile = path.join(process.cwd(), 'firebase-applet-config.json');
-  if (fs.existsSync(firebaseConfigFile)) {
-    firebaseConfig = JSON.parse(fs.readFileSync(firebaseConfigFile, 'utf-8'));
+  const paths = [
+    path.join(process.cwd(), 'firebase-applet-config.json'),
+    path.join(__dirname, 'firebase-applet-config.json'),
+    '/var/task/firebase-applet-config.json' // Common Vercel path
+  ];
+  
+  let configPath = paths.find(p => fs.existsSync(p));
+
+  if (configPath) {
+    firebaseConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
     
     if (getApps().length === 0) {
       initializeApp({
@@ -23,11 +30,11 @@ try {
       });
     }
     
-    // Explicitly use the database ID from config
-    db = getFirestore(firebaseConfig.firestoreDatabaseId || '(default)');
-    console.log('Firebase Admin initialized. Project:', firebaseConfig.projectId, 'DB:', firebaseConfig.firestoreDatabaseId);
+    const dbId = firebaseConfig.firestoreDatabaseId || '(default)';
+    db = getFirestore(dbId);
+    console.log(`Firebase Admin initialized. Project: ${firebaseConfig.projectId}, DB: ${dbId}`);
   } else {
-    console.warn('Warning: firebase-applet-config.json not found.');
+    console.error('CRITICAL: firebase-applet-config.json NOT FOUND in any path:', paths);
   }
 } catch (error) {
   console.error('Firebase Admin initialization error:', error);
@@ -95,25 +102,36 @@ app.post('/api/telegram-webhook', async (req, res) => {
       }
 
       // 1. Update Database
-      const success = await updateBookingStatus(bookingId, action === 'approve' ? 'confirmed' : 'rejected');
+      let errorMessage = '';
+      let success = false;
+      
+      if (!db) {
+        errorMessage = 'Database not initialized on server.';
+      } else {
+        success = await updateBookingStatus(bookingId, action === 'approve' ? 'confirmed' : 'rejected');
+        if (!success) errorMessage = 'Failed to update Firestore.';
+      }
+
       const newStatus = action === 'approve' ? 'confirmed' : 'rejected';
       const statusLabel = newStatus === 'confirmed' ? 'DILULUSKAN' : 'DITOLAK';
 
       // 2. Get Bot Token
       const activeToken = await getBotTokenFromDB();
 
-      // 3. Answer Callback (Crucial to stop loading spinner in Telegram)
+      // 3. Answer Callback with actual status
       await fetch(`https://api.telegram.org/bot${activeToken}/answerCallbackQuery`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           callback_query_id: queryId,
-          text: `Tempahan berjaya ${statusLabel.toLowerCase()}!`
+          text: success 
+            ? `Tempahan berjaya ${statusLabel.toLowerCase()}!` 
+            : `Ralat: ${errorMessage}`
         })
       });
 
       if (success) {
-         // 4. Update the message UI in Telegram
+         // 4. Update the message UI in Telegram only if DB update was successful
          const statusEmoji = newStatus === 'confirmed' ? '✅' : '❌';
          const updatedText = tgMessage.text + `\n\n${statusEmoji} TELAH ${statusLabel} oleh ${from.first_name}`;
          
