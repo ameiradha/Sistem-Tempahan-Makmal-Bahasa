@@ -138,4 +138,5 @@ async function startServer() {
   });
 }
 
+// Ensure server starts in the current environment
 startServer();
