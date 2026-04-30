@@ -9,74 +9,110 @@ import fs from 'fs';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Initialize Firebase Admin with error handling
-let db: any;
+let firebaseConfig: any = null;
 try {
-  const firebaseConfigFile = path.join(__dirname, 'firebase-applet-config.json');
+  const firebaseConfigFile = path.join(process.cwd(), 'firebase-applet-config.json');
   if (fs.existsSync(firebaseConfigFile)) {
-    const firebaseConfig = JSON.parse(fs.readFileSync(firebaseConfigFile, 'utf-8'));
+    firebaseConfig = JSON.parse(fs.readFileSync(firebaseConfigFile, 'utf-8'));
     admin.initializeApp({
       projectId: firebaseConfig.projectId,
     });
-    db = getFirestore(firebaseConfig.firestoreDatabaseId);
-    console.log('Firebase Admin initialized successfully');
+    console.log('Firebase Admin initialized for Project:', firebaseConfig.projectId);
   } else {
-    console.warn('Warning: firebase-applet-config.json not found. Firestore features will be limited.');
+    console.warn('Warning: firebase-applet-config.json not found.');
   }
 } catch (error) {
   console.error('Firebase Admin initialization error:', error);
 }
 
+// Fallback Settings (Using provided details)
+const DEFAULT_BOT_TOKEN = '8707832885:AAGIzdFIDYGBsVVkR4ihKtVGDciILho0zfU';
+
 const app = express();
 app.use(express.json());
 
-// Logging Middleware
-app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
-  next();
-});
+// Helper function to update Firestore via REST (More reliable on Vercel without SA)
+async function updateBookingStatus(bookingId: string, newStatus: string) {
+  if (!firebaseConfig) return false;
+  
+  const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${firebaseConfig.firestoreDatabaseId || '(default)'}/documents/bookings/${bookingId}?updateMask.fieldPaths=status&updateMask.fieldPaths=updatedAt&key=${firebaseConfig.apiKey}`;
+  
+  const payload = {
+    fields: {
+      status: { stringValue: newStatus },
+      updatedAt: { timestampValue: new Date().toISOString() }
+    }
+  };
+
+  try {
+    const res = await fetch(url, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return res.ok;
+  } catch (err) {
+    console.error('REST Update Error:', err);
+    return false;
+  }
+}
+
+// Helper to get settings via REST
+async function getBotTokenFromDB() {
+  if (!firebaseConfig) return DEFAULT_BOT_TOKEN;
+  
+  const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${firebaseConfig.firestoreDatabaseId || '(default)'}/documents/settings/global?key=${firebaseConfig.apiKey}`;
+  
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return DEFAULT_BOT_TOKEN;
+    const data = await res.json();
+    return data.fields?.telegramBotToken?.stringValue || DEFAULT_BOT_TOKEN;
+  } catch (err) {
+    return DEFAULT_BOT_TOKEN;
+  }
+}
 
 // API Routes
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({ status: 'ok', v: '2.1', timestamp: new Date().toISOString() });
 });
 
 // Telegram Webhook
 app.post('/api/telegram-webhook', async (req, res) => {
   try {
-    console.log('Received Telegram Webhook Update');
     const { callback_query } = req.body;
 
     if (callback_query) {
-      const { data, message: tgMessage, from } = callback_query;
+      const { id: queryId, data, message: tgMessage, from } = callback_query;
       const [action, bookingId] = data.split(':');
 
-      if (!bookingId || !action || !db) {
-         return res.status(400).send('Invalid data or database not initialized');
+      if (!bookingId || !action) {
+         return res.status(400).send('Invalid data');
       }
 
-      const bookingRef = db.collection('bookings').doc(bookingId);
-      const bookingSnap = await bookingRef.get();
-
-      if (!bookingSnap.exists) {
-        return res.status(404).send('Booking not found');
-      }
-
-      const booking = bookingSnap.data();
+      // 1. Update Database
+      const success = await updateBookingStatus(bookingId, action === 'approve' ? 'confirmed' : 'rejected');
       const newStatus = action === 'approve' ? 'confirmed' : 'rejected';
+      const statusLabel = newStatus === 'confirmed' ? 'DILULUSKAN' : 'DITOLAK';
 
-      await bookingRef.update({
-        status: newStatus,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      // 2. Get Bot Token
+      const activeToken = await getBotTokenFromDB();
+
+      // 3. Answer Callback (Crucial to stop loading spinner in Telegram)
+      await fetch(`https://api.telegram.org/bot${activeToken}/answerCallbackQuery`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          callback_query_id: queryId,
+          text: `Tempahan berjaya ${statusLabel.toLowerCase()}!`
+        })
       });
 
-      // Update Telegram message
-      const settingsSnap = await db.collection('settings').doc('global').get();
-      const settings = settingsSnap.data();
-      const activeToken = settings?.telegramBotToken;
-
-      if (activeToken) {
-         const statusText = newStatus === 'confirmed' ? '✅ TELAH DILULUSKAN' : '❌ TELAH DITOLAK';
-         const updatedText = tgMessage.text + `\n\n${statusText} oleh ${from.first_name}`;
+      if (success) {
+         // 4. Update the message UI in Telegram
+         const statusEmoji = newStatus === 'confirmed' ? '✅' : '❌';
+         const updatedText = tgMessage.text + `\n\n${statusEmoji} TELAH ${statusLabel} oleh ${from.first_name}`;
          
          await fetch(`https://api.telegram.org/bot${activeToken}/editMessageText`, {
            method: 'POST',
