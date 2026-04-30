@@ -899,7 +899,8 @@ function BookingModal({
         createdAt: serverTimestamp()
       };
 
-      await addDoc(collection(db, 'bookings'), bookingData);
+      const docRef = await addDoc(collection(db, 'bookings'), bookingData);
+      const newBookingId = docRef.id;
 
       // Send Telegram Notification if configured
       if (settings.telegramBotToken && settings.telegramChatId) {
@@ -917,7 +918,15 @@ function BookingModal({
           body: JSON.stringify({
             chat_id: settings.telegramChatId,
             text: message,
-            parse_mode: 'Markdown'
+            parse_mode: 'Markdown',
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  { text: '✅ Lulus', callback_data: `approve:${newBookingId}` },
+                  { text: '❌ Tolak', callback_data: `reject:${newBookingId}` }
+                ]
+              ]
+            }
           })
         }).catch(err => console.error('Telegram notification failed:', err));
       }
@@ -1511,6 +1520,32 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
     setSaving(false);
   };
 
+  const handleSetupWebhook = async () => {
+    if (!form.telegramBotToken) {
+      alert('Sila masukkan Telegram Bot Token terlebih dahulu.');
+      return;
+    }
+    
+    // Determine the URL to use. Preference: User provided Vercel URL, then current origin.
+    const currentUrl = window.location.origin;
+    const targetUrl = prompt('Masukkan URL Webhook Utama (Vercel atau Development):', currentUrl);
+    
+    if (!targetUrl) return;
+
+    try {
+      const response = await fetch(`/api/setup-telegram-webhook?token=${form.telegramBotToken}&url=${targetUrl}`);
+      const data = await response.json();
+      if (data.ok) {
+        alert('Webhook Telegram berjaya diaktifkan!');
+      } else {
+        alert('Gagal mengaktifkan webhook: ' + (data.description || 'Ralat tidak diketahui'));
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Ralat semasa menghubungi server.');
+    }
+  };
+
   return (
     <div className="max-w-2xl">
       <Card className="p-8">
@@ -1656,6 +1691,20 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
                   className="w-full p-3 rounded-lg border border-slate-200 bg-white text-sm font-medium outline-none focus:border-blue-500"
                   placeholder="Contoh: -100123456789 atau 12345678"
                 />
+              </div>
+              <div className="pt-2">
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  size="sm" 
+                  className="w-full h-10 border-blue-200 text-blue-600 hover:bg-blue-50 font-bold"
+                  onClick={handleSetupWebhook}
+                >
+                  Aktifkan Webhook (Lulus/Tolak via Telegram)
+                </Button>
+                <p className="text-[9px] text-slate-400 mt-2 italic text-center">
+                  *Klik selepas Simpan Tetapan di atas. Benarkan Admin lulus/tolak terus dari Telegram.
+                </p>
               </div>
               <p className="text-[9px] text-slate-400 font-medium italic">
                 Dapatkan Bot Token melalui @BotFather. Chat ID adalah ID akaun Telegram anda (guna @userinfobot) atau ID Group (bukan ID Bot).
