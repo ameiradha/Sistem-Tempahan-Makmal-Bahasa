@@ -4,7 +4,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import admin from 'firebase-admin';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import fetch from 'node-fetch';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -14,13 +15,11 @@ const firebaseConfigPath = path.join(process.cwd(), 'firebase-applet-config.json
 const firebaseConfig = JSON.parse(fs.readFileSync(firebaseConfigPath, 'utf8'));
 
 // Initialize Firebase Admin
-if (!admin.apps.length) {
-  admin.initializeApp({
-    projectId: firebaseConfig.projectId,
-  });
-}
+const adminApp = !admin.apps.length 
+  ? admin.initializeApp({ projectId: firebaseConfig.projectId })
+  : admin.app();
 
-const db = getFirestore(firebaseConfig.firestoreDatabaseId);
+const db = getFirestore(adminApp, firebaseConfig.firestoreDatabaseId);
 
 async function startServer() {
   const app = express();
@@ -68,7 +67,7 @@ async function startServer() {
 
       await bookingRef.update({
         status,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        updatedAt: FieldValue.serverTimestamp()
       });
 
       // Update original message
@@ -111,10 +110,8 @@ async function startServer() {
       
       console.log(`Setting up webhook for bot: ${tokenStr.slice(0, 5)}... with URL: ${webhookUrl}`);
       
-      // Use global fetch (built-in in Node 18+)
-      // @ts-ignore
-      const tgRes = await fetch(`https://api.telegram.org/bot${tokenStr}/setWebhook?url=${encodeURI(webhookUrl)}`);
-      const data = await tgRes.json();
+      const tgRes = await fetch(`https://api.telegram.org/bot${tokenStr}/setWebhook?url=${encodeURIComponent(webhookUrl)}`);
+      const data: any = await tgRes.json();
       
       console.log('Telegram API Response:', data);
       return res.json(data);

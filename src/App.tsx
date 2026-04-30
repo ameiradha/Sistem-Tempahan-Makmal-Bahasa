@@ -1665,19 +1665,19 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
                         
                         const apiUrl = `/api/setup-telegram-webhook?token=${encodeURIComponent(form.telegramBotToken)}&url=${encodeURIComponent(url)}`;
                         const res = await fetch(apiUrl);
+                        const responseText = await res.text();
                         
-                        const contentType = res.headers.get('content-type');
-                        if (!contentType || !contentType.includes('application/json')) {
-                          console.error('Unexpected non-JSON response:', await res.text().catch(() => 'No body'));
-                          throw new Error('Server tidak membalas dalam format yang betul (JSON expected). Sila Refresh halaman dan cuba lagi.');
+                        let data;
+                        try {
+                          data = JSON.parse(responseText);
+                        } catch (e) {
+                          console.error('Failed to parse response as JSON:', responseText);
+                          throw new Error(`Server memulangkan data bukan JSON. Ini mungkin bermaksud server sedang "Restart" atau mempunyai ralat. Sila cuba lagi dalam 10 saat.`);
                         }
 
                         if (!res.ok) {
-                          const errorData = await res.json().catch(() => ({ description: 'Internal Server Error' }));
-                          throw new Error(errorData.description || `Ralat Server (${res.status})`);
+                          throw new Error(data.description || `Ralat Server (${res.status})`);
                         }
-
-                        const data = await res.json();
                         if (data.ok) {
                           alert('✅ Berhasil! Webhook telegram telah diaktifkan.\n\nAnda kini boleh meluluskan atau menolak tempahan terus dari Telegram.');
                         } else {
