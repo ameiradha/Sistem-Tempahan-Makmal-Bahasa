@@ -2,22 +2,30 @@ import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import admin from 'firebase-admin';
-import { getFirestore } from 'firebase-admin/firestore';
+import { initializeApp, getApps, getApp } from 'firebase-admin/app';
+import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import fs from 'fs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Initialize Firebase Admin with error handling
 let firebaseConfig: any = null;
+let db: any = null;
+
 try {
   const firebaseConfigFile = path.join(process.cwd(), 'firebase-applet-config.json');
   if (fs.existsSync(firebaseConfigFile)) {
     firebaseConfig = JSON.parse(fs.readFileSync(firebaseConfigFile, 'utf-8'));
-    admin.initializeApp({
-      projectId: firebaseConfig.projectId,
-    });
-    console.log('Firebase Admin initialized for Project:', firebaseConfig.projectId);
+    
+    if (getApps().length === 0) {
+      initializeApp({
+        projectId: firebaseConfig.projectId,
+      });
+    }
+    
+    // Explicitly use the database ID from config
+    db = getFirestore(firebaseConfig.firestoreDatabaseId || '(default)');
+    console.log('Firebase Admin initialized. Project:', firebaseConfig.projectId, 'DB:', firebaseConfig.firestoreDatabaseId);
   } else {
     console.warn('Warning: firebase-applet-config.json not found.');
   }
@@ -25,50 +33,45 @@ try {
   console.error('Firebase Admin initialization error:', error);
 }
 
-// Fallback Settings (Using provided details)
+// Fallback Settings
 const DEFAULT_BOT_TOKEN = '8707832885:AAGIzdFIDYGBsVVkR4ihKtVGDciILho0zfU';
 
 const app = express();
 app.use(express.json());
 
-// Helper function to update Firestore via REST (More reliable on Vercel without SA)
+// Helper function to update Firestore via Admin SDK (Bypassing rules)
 async function updateBookingStatus(bookingId: string, newStatus: string) {
-  if (!firebaseConfig) return false;
+  if (!db) {
+    console.error('Database not initialized');
+    return false;
+  }
   
-  const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${firebaseConfig.firestoreDatabaseId || '(default)'}/documents/bookings/${bookingId}?updateMask.fieldPaths=status&updateMask.fieldPaths=updatedAt&key=${firebaseConfig.apiKey}`;
-  
-  const payload = {
-    fields: {
-      status: { stringValue: newStatus },
-      updatedAt: { timestampValue: new Date().toISOString() }
-    }
-  };
-
   try {
-    const res = await fetch(url, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+    const bookingRef = db.collection('bookings').doc(bookingId);
+    await bookingRef.update({
+      status: newStatus,
+      updatedAt: FieldValue.serverTimestamp()
     });
-    return res.ok;
+    console.log(`Booking ${bookingId} updated to ${newStatus}`);
+    return true;
   } catch (err) {
-    console.error('REST Update Error:', err);
+    console.error('Admin Update Error:', err);
     return false;
   }
 }
 
-// Helper to get settings via REST
+// Helper to get settings via Admin SDK
 async function getBotTokenFromDB() {
-  if (!firebaseConfig) return DEFAULT_BOT_TOKEN;
-  
-  const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${firebaseConfig.firestoreDatabaseId || '(default)'}/documents/settings/global?key=${firebaseConfig.apiKey}`;
+  if (!db) return DEFAULT_BOT_TOKEN;
   
   try {
-    const res = await fetch(url);
-    if (!res.ok) return DEFAULT_BOT_TOKEN;
-    const data = await res.json();
-    return data.fields?.telegramBotToken?.stringValue || DEFAULT_BOT_TOKEN;
+    const settingsSnap = await db.collection('settings').doc('global').get();
+    if (settingsSnap.exists) {
+      return settingsSnap.data()?.telegramBotToken || DEFAULT_BOT_TOKEN;
+    }
+    return DEFAULT_BOT_TOKEN;
   } catch (err) {
+    console.error('Error fetching bot token:', err);
     return DEFAULT_BOT_TOKEN;
   }
 }
