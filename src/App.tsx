@@ -566,17 +566,20 @@ function DashboardView({ profile, bookings }: { profile: UserProfile, bookings: 
           <span className="text-[10px] font-bold text-slate-400">Papar Semua →</span>
         </div>
         
-        {bookings.length === 0 ? (
+        {bookings.filter(b => b.status === 'confirmed').length === 0 ? (
           <div className="bg-white border-2 border-dashed border-slate-100 rounded-xl p-10 text-center text-slate-400 text-sm font-medium">
             Tiada data tempahan ditemui makmal kali ini.
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {bookings.slice(0, 6).map(booking => (
-              <div key={booking.id}>
-                <BookingCard booking={booking} />
-              </div>
-            ))}
+            {bookings
+              .filter(b => b.status === 'confirmed')
+              .slice(0, 6)
+              .map(booking => (
+                <div key={booking.id}>
+                  <BookingCard booking={booking} />
+                </div>
+              ))}
           </div>
         )}
       </div>
