@@ -24,15 +24,22 @@ async function startServer() {
 
   app.use(express.json());
 
+  // Logging Middleware
+  app.use((req, res, next) => {
+    console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+    next();
+  });
+
   // API Routes
   app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok' });
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
   });
 
   // Telegram Webhook
   app.post('/api/telegram-webhook', async (req, res) => {
     try {
-      const { callback_query, message } = req.body;
+      console.log('Received Telegram Webhook Update');
+      const { callback_query } = req.body;
 
       if (callback_query) {
         const { data, message: tgMessage, from } = callback_query;
