@@ -1436,6 +1436,19 @@ function EditBookingModal({
 function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: Lab[] }) {
   const [form, setForm] = useState(settings);
   const [saving, setSaving] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+
+  // Sync form with settings only if user has not modified anything
+  useEffect(() => {
+    if (!isDirty) {
+      setForm(settings);
+    }
+  }, [settings, isDirty]);
+
+  const updateForm = (updates: Partial<AppSettings>) => {
+    setForm(prev => ({ ...prev, ...updates }));
+    setIsDirty(true);
+  };
 
   const handleDeleteLab = async (id: string) => {
     if (!confirm('Adakah anda pasti mahu memadam makmal ini? Semua tempahan berkaitan mungkin terjejas.')) return;
@@ -1491,6 +1504,7 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
         await setDoc(doc(db, 'settings', 'security'), securityUpdate);
       }
       
+      setIsDirty(false); // Reset dirty state
       alert('Tetapan berjaya disimpan!');
     } catch (err) {
       console.error(err);
@@ -1512,7 +1526,7 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
               <input 
                 type="text" 
                 value={form.systemName}
-                onChange={e => setForm({...form, systemName: e.target.value})}
+                onChange={e => updateForm({ systemName: e.target.value })}
                 className="w-full p-3 rounded-lg border border-slate-200 bg-white text-sm font-medium outline-none focus:border-blue-500"
                 placeholder="Contoh: Sistem Booking Makmal Bahasa"
               />
@@ -1522,7 +1536,7 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
               <input 
                 type="text" 
                 value={form.systemDescription}
-                onChange={e => setForm({...form, systemDescription: e.target.value})}
+                onChange={e => updateForm({ systemDescription: e.target.value })}
                 className="w-full p-3 rounded-lg border border-slate-200 bg-white text-sm font-medium outline-none focus:border-blue-500"
                 placeholder="Contoh: Pengurusan Tempahan Berpusat"
               />
@@ -1544,7 +1558,7 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
                           }
                           const reader = new FileReader();
                           reader.onloadend = () => {
-                            setForm({...form, logoUrl: reader.result as string});
+                            updateForm({ logoUrl: reader.result as string });
                           };
                           reader.readAsDataURL(file);
                         }
@@ -1569,7 +1583,7 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
               {form.logoUrl && (
                 <button 
                   type="button" 
-                  onClick={() => setForm({...form, logoUrl: ''})}
+                  onClick={() => updateForm({ logoUrl: '' })}
                   className="mt-2 text-[10px] text-rose-500 font-bold uppercase hover:underline"
                 >
                   Padam Logo
@@ -1630,7 +1644,7 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
                 <input 
                   type="password" 
                   value={form.telegramBotToken || ''}
-                  onChange={e => setForm({...form, telegramBotToken: e.target.value})}
+                  onChange={e => updateForm({ telegramBotToken: e.target.value })}
                   className="w-full p-3 rounded-lg border border-slate-200 bg-white text-sm font-medium outline-none focus:border-blue-500"
                   placeholder="Contoh: 123456789:ABCDE..."
                 />
@@ -1640,7 +1654,7 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
                 <input 
                   type="text" 
                   value={form.telegramChatId || ''}
-                  onChange={e => setForm({...form, telegramChatId: e.target.value})}
+                  onChange={e => updateForm({ telegramChatId: e.target.value })}
                   className="w-full p-3 rounded-lg border border-slate-200 bg-white text-sm font-medium outline-none focus:border-blue-500"
                   placeholder="Contoh: -100123456789 atau 12345678"
                 />
@@ -1671,17 +1685,20 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
                         try {
                           data = JSON.parse(responseText);
                         } catch (e) {
-                          console.error('Failed to parse response as JSON:', responseText);
-                          throw new Error(`Server memulangkan data bukan JSON. Ini mungkin bermaksud server sedang "Restart" atau mempunyai ralat. Sila cuba lagi dalam 10 saat.`);
+                          console.error('Bukan JSON:', responseText);
+                          if (responseText.includes('<!DOCTYPE html>') || responseText.includes('<html')) {
+                            throw new Error('Server sedang dimulakan semula (restarting). Sila tunggu 15 saat dan tekan butang ini sekali lagi.');
+                          }
+                          throw new Error(`Maklum balas server tidak sah. Sila Refresh halaman dan cuba lagi.`);
                         }
 
                         if (!res.ok) {
                           throw new Error(data.description || `Ralat Server (${res.status})`);
                         }
                         if (data.ok) {
-                          alert('✅ Berhasil! Webhook telegram telah diaktifkan.\n\nAnda kini boleh meluluskan atau menolak tempahan terus dari Telegram.');
+                          alert('✅ BERHASIL!\n\nWebhook Telegram telah diaktifkan. Anda kini boleh mula meluluskan sebarang tempahan baru melalui butang di Telegram.');
                         } else {
-                          alert(`❌ Gagal: ${data.description || 'Sila semak Bot Token anda.'}`);
+                          alert(`❌ GAGAL: ${data.description || 'Sila semak semula Bot Token anda.'}`);
                         }
                       } catch (err: any) {
                         console.error('Webhook Setup Interaction Error:', err);
@@ -1692,6 +1709,44 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
                   >
                     Aktifkan Webhook Butang Bot
                   </button>
+
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={async () => {
+                      if (!form.telegramBotToken || !form.telegramChatId) {
+                        alert('❌ Sila isi Bot Token DAN Chat ID terlebih dahulu.');
+                        return;
+                      }
+                      try {
+                        const apiUrl = `/api/test-telegram-bot?token=${encodeURIComponent(form.telegramBotToken)}&chatId=${encodeURIComponent(form.telegramChatId)}`;
+                        const res = await fetch(apiUrl);
+                        const responseText = await res.text();
+                        
+                        let data;
+                        try {
+                          data = JSON.parse(responseText);
+                        } catch (e) {
+                          if (responseText.includes('<!DOCTYPE html>') || responseText.includes('<html')) {
+                            throw new Error('Server sedang dimulakan semula (restarting). Sila tunggu 15 saat dan cuba lagi.');
+                          }
+                          throw new Error(`Maklum balas server tidak sah. Sila Refresh halaman dan cuba lagi.`);
+                        }
+
+                        if (data.ok) {
+                          alert('✅ Mesej Ujian Dihantar! Sila semak Telegram bot anda.\n\nKlik butang Lulus/Tolak pada mesej ujian tersebut untuk melihat maklum-balas sistem.');
+                        } else {
+                          alert(`❌ Gagal: ${data.description || 'Sila semak Bot Token & Chat ID.'}`);
+                        }
+                      } catch (err: any) {
+                        alert(`❌ Ralat: ${err.message || 'Sila cuba lagi.'}`);
+                      }
+                    }}
+                    className="w-full p-3 bg-slate-800 text-white text-[11px] font-black uppercase tracking-widest rounded-xl hover:bg-slate-900 active:scale-[0.98] transition-all shadow-md disabled:opacity-50 border border-slate-700"
+                  >
+                    🚀 Hantar Bot Testing
+                  </button>
+
                   <p className="text-[8px] text-blue-500 font-bold text-center uppercase tracking-tighter">
                     Klik butang atas jika butang Lulus/Tolak di Telegram tidak berfungsi.
                   </p>
@@ -1708,7 +1763,7 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
                 <input 
                   type="password" 
                   value={form.adminPassword || ''}
-                  onChange={e => setForm({...form, adminPassword: e.target.value})}
+                  onChange={e => updateForm({ adminPassword: e.target.value })}
                   className="w-full p-3 rounded-lg border border-slate-200 bg-white text-sm font-medium outline-none focus:border-blue-500"
                   placeholder="Sila masukkan kata laluan baru..."
                 />

@@ -38,28 +38,80 @@ async function startServer() {
     res.json({ status: 'ok', time: new Date().toISOString() });
   });
 
+  // Helper to interact with Telegram API
+  async function callTelegram(method: string, token: string, body: any) {
+    try {
+      const resp = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      return await resp.json();
+    } catch (err) {
+      console.error(`Telegram API Call Error (${method}):`, err);
+      return { ok: false, description: 'Network error' };
+    }
+  }
+
   // API Route for Telegram Webhook
   app.post('/api/telegram-webhook', async (req, res) => {
-    console.log('Received Telegram Webhook Payload');
+    console.log('[WEBHOOK] Received Payload:', JSON.stringify(req.body, null, 2));
     const { callback_query } = req.body;
 
     if (!callback_query) {
+      console.log('[WEBHOOK] No callback_query, ignoring.');
       return res.sendStatus(200);
     }
 
-    const { id: queryId, data, message } = callback_query;
-    const [action, bookingId] = data.split(':');
-
+    const { id: queryId, data, message, from } = callback_query;
+    
     try {
+      // Fetch settings to get the token
+      const settingsSnap = await db.collection('settings').doc('global').get();
+      const settings = settingsSnap.data() || {};
+      const token = settings.telegramBotToken;
+
+      if (!token) {
+        console.error('[WEBHOOK ERROR] Bot Token not found in settings/global');
+        return res.sendStatus(200);
+      }
+
+      // Always answer the callback query immediately to stop the spinning icon
+      await callTelegram('answerCallbackQuery', token, { callback_query_id: queryId });
+
+      // Handle data
+      const delimiter = data.includes(':') ? ':' : '_';
+      const parts = data.split(delimiter).map((s: string) => s.trim());
+      const action = parts[0];
+      const bookingId = parts[1];
+
+      console.log(`[WEBHOOK] Action: ${action}, BookingId: ${bookingId}, Source: ${from.username || from.id}`);
+
+      if (bookingId === 'TEST_ID') {
+        const statusText = action === 'approve' ? 'DILULUSKAN (TEST ✅)' : 'DITOLAK (TEST ❌)';
+        const originalText = message?.text || 'Testing Bot';
+        const updatedText = `🧪 *TESTING BOT SYSTEM*\n\n${originalText.split('\n\n')[0]}\n\n✨ *STATUS:* ${statusText}\n\nWebhook dan Bot anda berfungsi dengan baik!`;
+        
+        await callTelegram('editMessageText', token, {
+          chat_id: message.chat.id,
+          message_id: message.message_id,
+          text: updatedText,
+          parse_mode: 'Markdown',
+          reply_markup: { inline_keyboard: [] }
+        });
+        return res.sendStatus(200);
+      }
+
       const bookingRef = db.collection('bookings').doc(bookingId);
       const bookingDoc = await bookingRef.get();
 
       if (!bookingDoc.exists) {
-        return res.json({
-          method: 'answerCallbackQuery',
-          callback_query_id: queryId,
-          text: 'Ralat: Tempahan tidak ditemui.'
+        console.warn(`[WEBHOOK] Booking ${bookingId} not found`);
+        await callTelegram('sendMessage', token, {
+          chat_id: message.chat.id,
+          text: '❌ Ralat: Tempahan tidak ditemui. Mungkin ia telah dipadam.'
         });
+        return res.sendStatus(200);
       }
 
       const status = action === 'approve' ? 'confirmed' : 'rejected';
@@ -70,54 +122,111 @@ async function startServer() {
         updatedAt: FieldValue.serverTimestamp()
       });
 
-      // Update original message
-      const originalText = message.text;
-      const updatedText = `${originalText}\n\n✅ *STATUS: ${statusText}* (melalui Telegram @${callback_query.from.username || 'admin'})`;
+      const userMark = from.username ? `@${from.username}` : (from.first_name || 'Admin');
+      const updatedText = `${message.text}\n\n✅ *STATUS: ${statusText}* (oleh ${userMark})`;
 
-      // Answer Telegram
-      return res.json({
-        method: 'editMessageText',
+      await callTelegram('editMessageText', token, {
         chat_id: message.chat.id,
         message_id: message.message_id,
         text: updatedText,
         parse_mode: 'Markdown',
-        reply_markup: { inline_keyboard: [] } // Remove buttons
+        reply_markup: { inline_keyboard: [] }
       });
 
-    } catch (err) {
-      console.error('Webhook Error:', err);
-      return res.json({
-        method: 'answerCallbackQuery',
-        callback_query_id: queryId,
-        text: 'Ralat teknikal berlaku.'
-      });
+    } catch (err: any) {
+      console.error('[WEBHOOK ERROR] Internal failure:', err);
     }
+
+    return res.sendStatus(200);
   });
 
   // API to setup Webhook
   app.get('/api/setup-telegram-webhook', async (req, res) => {
     const { token, url } = req.query;
     
+    // Set explicit JSON header
+    res.setHeader('Content-Type', 'application/json');
+
     if (!token || !url) {
       console.warn('Setup Webhook attempt with missing token or URL');
-      return res.status(400).json({ ok: false, description: 'Token and URL are required' });
+      return res.status(400).json({ ok: false, description: 'Bot Token dan URL sistem diperlukan. Sila pastikan anda telah simpan tetapan.' });
     }
 
     try {
-      const tokenStr = String(token);
-      const urlStr = String(url);
-      const webhookUrl = `${urlStr}/api/telegram-webhook`;
+      const tokenStr = String(token).trim();
+      const urlStr = String(url).trim();
       
-      console.log(`Setting up webhook for bot: ${tokenStr.slice(0, 5)}... with URL: ${webhookUrl}`);
+      // Ensure url doesn't have trailing slash for consistency
+      const cleanUrl = urlStr.endsWith('/') ? urlStr.slice(0, -1) : urlStr;
+      const webhookUrl = `${cleanUrl}/api/telegram-webhook`;
+      
+      console.log(`[DEBUG] Memulakan setup webhook...`);
+      console.log(`[DEBUG] Bot Token: ${tokenStr.slice(0, 10)}...`);
+      console.log(`[DEBUG] Webhook URL: ${webhookUrl}`);
       
       const tgRes = await fetch(`https://api.telegram.org/bot${tokenStr}/setWebhook?url=${encodeURIComponent(webhookUrl)}`);
-      const data: any = await tgRes.json();
       
-      console.log('Telegram API Response:', data);
+      if (!tgRes.ok) {
+        const errBody = await tgRes.text();
+        console.error(`[TELEGRAM ERROR] Status: ${tgRes.status}`, errBody);
+        return res.status(tgRes.status).json({ 
+          ok: false, 
+          description: `Telegram API memberikan ralat (${tgRes.status}). Adakah Bot Token anda sah?` 
+        });
+      }
+
+      const data: any = await tgRes.json();
+      console.log('[DEBUG] Jawapan Telegram:', data);
       return res.json(data);
     } catch (err: any) {
-      console.error('Setup Webhook Internal Error:', err);
-      return res.status(500).json({ ok: false, description: err.message || 'Internal Server Error' });
+      console.error('[CRITICAL ERROR] Setup Webhook:', err);
+      return res.status(500).json({ 
+        ok: false, 
+        description: `Ralat Dalaman Server: ${err.message || 'Sila cuba lagi sebentar.'}` 
+      });
+    }
+  });
+
+  // API to test Telegram Bot connection
+  app.get('/api/test-telegram-bot', async (req, res) => {
+    const { token, chatId } = req.query;
+    res.setHeader('Content-Type', 'application/json');
+
+    console.log(`[DEBUG] Menguji bot Telegram...`);
+    console.log(`[DEBUG] Chat ID: ${chatId}`);
+
+    if (!token || !chatId) {
+      return res.status(400).json({ ok: false, description: 'Bot Token dan Admin Chat ID diperlukan.' });
+    }
+
+    try {
+      const message = `🧪 *TESTING BOT SYSTEM*\n\nIni adalah mesej ujian untuk memastikan bot dan webhook anda berfungsi dengan baik.\n\nSila klik butang di bawah untuk menguji respon sistem (Test ID):`;
+      
+      const keyboard = {
+        inline_keyboard: [
+          [
+            { text: '✅ TEST LULUS', callback_data: `approve_TEST_ID` },
+            { text: '❌ TEST TOLAK', callback_data: `reject_TEST_ID` }
+          ]
+        ]
+      };
+
+      const tgUrl = `https://api.telegram.org/bot${token}/sendMessage`;
+      const tgRes = await fetch(tgUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: message,
+          parse_mode: 'Markdown',
+          reply_markup: keyboard
+        })
+      });
+
+      const data: any = await tgRes.json();
+      return res.json(data);
+    } catch (err: any) {
+      return res.status(500).json({ ok: false, description: err.message });
     }
   });
 
