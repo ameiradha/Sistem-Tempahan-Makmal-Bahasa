@@ -58,6 +58,12 @@ service cloud.firestore {
       allow write: if isTeacher();
     }
 
+    // --- Teacher List Rules ---
+    match /teachers/{teacherId} {
+      allow read: if isSignedIn();
+      allow write: if isTeacher();
+    }
+
     // --- Booking Rules ---
     match /bookings/{bookingId} {
       allow read: if isSignedIn();

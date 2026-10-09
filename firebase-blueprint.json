@@ -42,6 +42,16 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["labId", "userId", "status", "date"]
+    },
+    "Teacher": {
+      "title": "Teacher",
+      "description": "Registered teacher name for lab booking options",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name"]
     }
   },
   "firestore": {
@@ -52,6 +62,10 @@
     "/labs/{labId}": {
       "schema": "Lab",
       "description": "Computer labs"
+    },
+    "/teachers/{teacherId}": {
+      "schema": "Teacher",
+      "description": "List of teachers available for lab bookings"
     },
     "/bookings/{bookingId}": {
       "schema": "Booking",

@@ -41,6 +41,12 @@ export interface Lab {
   description?: string;
 }
 
+export interface Teacher {
+  id: string;
+  name: string;
+  createdAt?: any;
+}
+
 export const TIME_SLOTS = [
   "07:00 - 07:30",
   "07:30 - 08:00",

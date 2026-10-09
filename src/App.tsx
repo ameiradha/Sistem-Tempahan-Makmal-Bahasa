@@ -23,7 +23,8 @@ import {
   deleteDoc,
   serverTimestamp,
   updateDoc,
-  orderBy
+  orderBy,
+  writeBatch
 } from 'firebase/firestore';
 import { 
   Calendar as CalendarIcon, 
@@ -43,7 +44,12 @@ import {
   Image as ImageIcon,
   Menu,
   X,
-  Pencil
+  Pencil,
+  Trash2,
+  Users,
+  Search,
+  RotateCcw,
+  Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import jsPDF from 'jspdf';
@@ -66,7 +72,7 @@ import {
 
 import { auth, db } from './lib/firebase';
 import { cn } from './lib/utils';
-import { UserProfile, Booking, BookingStatus, Lab, AppSettings, TIME_SLOTS, TEACHERS, CLASSES, PURPOSES } from './types';
+import { UserProfile, Booking, BookingStatus, Lab, AppSettings, TIME_SLOTS, TEACHERS, CLASSES, PURPOSES, Teacher } from './types';
 
 // --- Components ---
 
@@ -123,6 +129,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'calendar' | 'admin'>('dashboard');
   const [labs, setLabs] = useState<Lab[]>([]);
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [settings, setSettings] = useState<AppSettings>({
@@ -240,6 +247,43 @@ export default function App() {
       }
     });
   }, [user, profile]);
+
+  // Sync Teachers
+  useEffect(() => {
+    if (!user) return;
+    const q = query(collection(db, 'teachers'), orderBy('name', 'asc'));
+    return onSnapshot(q, async (snapshot) => {
+      const teachersData = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Teacher));
+      setTeachers(teachersData);
+
+      // Auto-seed if empty and user is logged in as teacher/admin
+      if (snapshot.empty && profile?.role === 'teacher') {
+        try {
+          const batch = writeBatch(db);
+          TEACHERS.forEach(tName => {
+            const docRef = doc(collection(db, 'teachers'));
+            batch.set(docRef, { name: tName, createdAt: serverTimestamp() });
+          });
+          await batch.commit();
+        } catch (err) {
+          console.error('Auto-seed teachers error:', err);
+        }
+      }
+    }, (error) => {
+      console.error('Teachers sync error:', error);
+    });
+  }, [user, profile]);
+
+  const handleSeedTeachers = async () => {
+    const batch = writeBatch(db);
+    TEACHERS.forEach(tName => {
+      const docRef = doc(collection(db, 'teachers'));
+      batch.set(docRef, { name: tName, createdAt: serverTimestamp() });
+    });
+    await batch.commit();
+  };
+
+  const teacherNames = teachers.length > 0 ? teachers.map(t => t.name) : TEACHERS;
 
   // Sync Bookings
   useEffect(() => {
@@ -440,6 +484,7 @@ export default function App() {
                     bookings={bookings} 
                     profile={profile} 
                     settings={settings}
+                    teacherNames={teacherNames}
                   />
                 </motion.div>
               )}
@@ -450,7 +495,14 @@ export default function App() {
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                 >
-                  <AdminPanelView bookings={bookings} settings={settings} labs={labs} />
+                  <AdminPanelView 
+                    bookings={bookings} 
+                    settings={settings} 
+                    labs={labs}
+                    teachers={teachers}
+                    teacherNames={teacherNames}
+                    onSeedDefault={handleSeedTeachers}
+                  />
                 </motion.div>
               )}
             </AnimatePresence>
@@ -652,7 +704,7 @@ function BookingCard({ booking }: { booking: Booking }) {
   );
 }
 
-function CalendarView({ labs, bookings, profile, settings }: { labs: Lab[], bookings: Booking[], profile: UserProfile, settings: AppSettings }) {
+function CalendarView({ labs, bookings, profile, settings, teacherNames }: { labs: Lab[], bookings: Booking[], profile: UserProfile, settings: AppSettings, teacherNames?: string[] }) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState(new Date());
   const [selectedLab, setSelectedLab] = useState<Lab | null>(null);
@@ -829,6 +881,7 @@ function CalendarView({ labs, bookings, profile, settings }: { labs: Lab[], book
             profile={profile}
             existingBookings={bookingsOnSelectedDay}
             settings={settings}
+            teacherNames={teacherNames}
           />
         )}
       </AnimatePresence>
@@ -842,20 +895,24 @@ function BookingModal({
   onClose, 
   profile,
   existingBookings,
-  settings 
+  settings,
+  teacherNames
 }: { 
   lab: Lab, 
   date: Date, 
   onClose: () => void, 
   profile: UserProfile,
   existingBookings: Booking[],
-  settings: AppSettings
+  settings: AppSettings,
+  teacherNames?: string[]
 }) {
   const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
   const [teacherName, setTeacherName] = useState('');
   const [className, setClassName] = useState('');
   const [purpose, setPurpose] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const availableTeachers = teacherNames && teacherNames.length > 0 ? teacherNames : TEACHERS;
 
   const toggleSlot = (slot: string) => {
     if (selectedSlots.includes(slot)) {
@@ -970,8 +1027,8 @@ function BookingModal({
                 onChange={e => setTeacherName(e.target.value)}
                 className="w-full p-2.5 rounded-lg border border-slate-200 text-xs font-bold bg-slate-50 focus:bg-white focus:border-blue-500 transition-all outline-none"
               >
-                <option value="">-- Pilih Nama --</option>
-                {TEACHERS.map(t => <option key={t} value={t}>{t}</option>)}
+                <option value="">-- Pilih Nama ({availableTeachers.length} Guru) --</option>
+                {availableTeachers.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
             </div>
 
@@ -1039,11 +1096,25 @@ function BookingModal({
   );
 }
 
-function AdminPanelView({ bookings, settings, labs }: { bookings: Booking[], settings: AppSettings, labs: Lab[] }) {
+function AdminPanelView({ 
+  bookings, 
+  settings, 
+  labs, 
+  teachers, 
+  teacherNames, 
+  onSeedDefault 
+}: { 
+  bookings: Booking[]; 
+  settings: AppSettings; 
+  labs: Lab[]; 
+  teachers: Teacher[]; 
+  teacherNames: string[]; 
+  onSeedDefault: () => Promise<void>; 
+}) {
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [adminPass, setAdminPass] = useState('');
   const [error, setError] = useState('');
-  const [adminTab, setAdminTab] = useState<'approvals' | 'settings' | 'reports'>('approvals');
+  const [adminTab, setAdminTab] = useState<'approvals' | 'teachers' | 'settings' | 'reports'>('approvals');
 
   const adminSecret = settings.adminPassword || "admin123";
 
@@ -1088,6 +1159,8 @@ function AdminPanelView({ bookings, settings, labs }: { bookings: Booking[], set
     );
   }
 
+  const pendingCount = bookings.filter(b => b.status === 'pending').length;
+
   return (
     <div className="space-y-6">
       <div className="overflow-x-auto -mx-1 p-1">
@@ -1095,28 +1168,49 @@ function AdminPanelView({ bookings, settings, labs }: { bookings: Booking[], set
           <button 
             onClick={() => setAdminTab('approvals')}
             className={cn(
-              "px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all",
+              "px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5",
               adminTab === 'approvals' ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
             )}
           >
+            <CheckCircle2 className="w-3.5 h-3.5" />
             Pengesahan
+            {pendingCount > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full bg-rose-500 text-white text-[9px] font-bold">
+                {pendingCount}
+              </span>
+            )}
+          </button>
+          <button 
+            onClick={() => setAdminTab('teachers')}
+            className={cn(
+              "px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5",
+              adminTab === 'teachers' ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+            )}
+          >
+            <Users className="w-3.5 h-3.5" />
+            Senarai Guru
+            <span className="px-1.5 py-0.2 rounded-full bg-blue-100 text-blue-700 text-[9px] font-bold font-mono">
+              {teachers.length || teacherNames.length}
+            </span>
           </button>
           <button 
             onClick={() => setAdminTab('settings')}
             className={cn(
-              "px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all",
+              "px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5",
               adminTab === 'settings' ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
             )}
           >
+            <SettingsIcon className="w-3.5 h-3.5" />
             Tetapan Sistem
           </button>
           <button 
             onClick={() => setAdminTab('reports')}
             className={cn(
-              "px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all",
+              "px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5",
               adminTab === 'reports' ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
             )}
           >
+            <BookOpen className="w-3.5 h-3.5" />
             Laporan
           </button>
         </div>
@@ -1125,12 +1219,22 @@ function AdminPanelView({ bookings, settings, labs }: { bookings: Booking[], set
       <AnimatePresence mode="wait">
         {adminTab === 'approvals' && (
           <motion.div key="approvals" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }}>
-            <AdminApprovalsView bookings={bookings} />
+            <AdminApprovalsView bookings={bookings} teacherNames={teacherNames} />
+          </motion.div>
+        )}
+        {adminTab === 'teachers' && (
+          <motion.div key="teachers" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }}>
+            <AdminTeachersView teachers={teachers} onSeedDefault={onSeedDefault} />
           </motion.div>
         )}
         {adminTab === 'settings' && (
           <motion.div key="settings" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }}>
-            <AdminSettingsView settings={settings} labs={labs} />
+            <AdminSettingsView 
+              settings={settings} 
+              labs={labs} 
+              onOpenTeachersTab={() => setAdminTab('teachers')}
+              teachersCount={teachers.length || teacherNames.length}
+            />
           </motion.div>
         )}
         {adminTab === 'reports' && (
@@ -1143,7 +1247,7 @@ function AdminPanelView({ bookings, settings, labs }: { bookings: Booking[], set
   );
 }
 
-function AdminApprovalsView({ bookings }: { bookings: Booking[] }) {
+function AdminApprovalsView({ bookings, teacherNames }: { bookings: Booking[], teacherNames?: string[] }) {
   const pendingBookings = bookings.filter(b => b.status === 'pending');
   const pastBookings = bookings.filter(b => b.status !== 'pending');
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
@@ -1289,22 +1393,36 @@ function AdminApprovalsView({ bookings }: { bookings: Booking[] }) {
           </div>
         </div>
       </div>
+
+      <AnimatePresence>
+        {editingBooking && (
+          <EditBookingModal 
+            booking={editingBooking} 
+            onClose={() => setEditingBooking(null)} 
+            teacherNames={teacherNames}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
 
 function EditBookingModal({ 
   booking, 
-  onClose 
+  onClose,
+  teacherNames
 }: { 
   booking: Booking, 
-  onClose: () => void 
+  onClose: () => void,
+  teacherNames?: string[]
 }) {
   const [selectedSlots, setSelectedSlots] = useState<string[]>(booking.timeSlots || []);
   const [teacherName, setTeacherName] = useState(booking.teacherName || '');
   const [className, setClassName] = useState(booking.className || '');
   const [purpose, setPurpose] = useState(booking.purpose || '');
   const [loading, setLoading] = useState(false);
+
+  const availableTeachers = teacherNames && teacherNames.length > 0 ? teacherNames : TEACHERS;
 
   // We need to know other bookings on the same day for slot conflict check
   const [dayBookings, setDayBookings] = useState<Booking[]>([]);
@@ -1384,8 +1502,8 @@ function EditBookingModal({
                 onChange={e => setTeacherName(e.target.value)}
                 className="w-full p-2.5 rounded-lg border border-slate-200 text-xs font-bold bg-slate-50 focus:bg-white focus:border-blue-500 transition-all outline-none"
               >
-                <option value="">-- Pilih Nama --</option>
-                {TEACHERS.map(t => <option key={t} value={t}>{t}</option>)}
+                <option value="">-- Pilih Nama ({availableTeachers.length} Guru) --</option>
+                {availableTeachers.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
             </div>
 
@@ -1454,7 +1572,399 @@ function EditBookingModal({
   );
 }
 
-function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: Lab[] }) {
+function AdminTeachersView({ 
+  teachers, 
+  onSeedDefault 
+}: { 
+  teachers: Teacher[]; 
+  onSeedDefault: () => Promise<void>; 
+}) {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isAdding, setIsAdding] = useState(false);
+  const [newTeacherName, setNewTeacherName] = useState('');
+  const [editingTeacher, setEditingTeacher] = useState<Teacher | null>(null);
+  const [editName, setEditName] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [seeding, setSeeding] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  useEffect(() => {
+    if (feedback) {
+      const timer = setTimeout(() => setFeedback(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [feedback]);
+
+  const sortedTeachers = [...teachers].sort((a, b) => a.name.localeCompare(b.name, 'ms'));
+
+  const filteredTeachers = sortedTeachers.filter(t => 
+    t.name.toLowerCase().includes(searchTerm.toLowerCase().trim())
+  );
+
+  const handleAddTeacher = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanName = newTeacherName.trim().toUpperCase();
+    if (!cleanName) {
+      setFeedback({ type: 'error', message: 'Sila masukkan nama guru.' });
+      return;
+    }
+    if (teachers.some(t => t.name.toUpperCase() === cleanName)) {
+      setFeedback({ type: 'error', message: `Guru "${cleanName}" sudah wujud dalam senarai.` });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await addDoc(collection(db, 'teachers'), {
+        name: cleanName,
+        createdAt: serverTimestamp()
+      });
+      setNewTeacherName('');
+      setIsAdding(false);
+      setFeedback({ type: 'success', message: `Guru "${cleanName}" berjaya ditambah!` });
+    } catch (err: any) {
+      console.error(err);
+      setFeedback({ type: 'error', message: 'Gagal menambah guru: ' + (err.message || 'Ralat sistem.') });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdateTeacher = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTeacher) return;
+    const cleanName = editName.trim().toUpperCase();
+    if (!cleanName) {
+      setFeedback({ type: 'error', message: 'Nama guru tidak boleh dibiarkan kosong.' });
+      return;
+    }
+    if (teachers.some(t => t.id !== editingTeacher.id && t.name.toUpperCase() === cleanName)) {
+      setFeedback({ type: 'error', message: `Nama "${cleanName}" sudah digunakan oleh guru lain.` });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await updateDoc(doc(db, 'teachers', editingTeacher.id), {
+        name: cleanName,
+        updatedAt: serverTimestamp()
+      });
+      setFeedback({ type: 'success', message: `Nama guru berjaya dikemaskini kepada "${cleanName}"!` });
+      setEditingTeacher(null);
+      setEditName('');
+    } catch (err: any) {
+      console.error(err);
+      setFeedback({ type: 'error', message: 'Gagal mengemaskini guru: ' + (err.message || 'Ralat sistem.') });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteTeacher = async (teacher: Teacher) => {
+    const confirmed = window.confirm(`Adakah anda pasti mahu memadam guru "${teacher.name}" daripada senarai?\n\nNama ini tidak akan dipaparkan dalam borang tempahan.`);
+    if (!confirmed) return;
+
+    try {
+      await deleteDoc(doc(db, 'teachers', teacher.id));
+      setFeedback({ type: 'success', message: `Guru "${teacher.name}" berjaya dipadam.` });
+    } catch (err: any) {
+      console.error(err);
+      setFeedback({ type: 'error', message: 'Gagal memadam guru: ' + (err.message || 'Ralat sistem.') });
+    }
+  };
+
+  const handleRestoreDefault = async () => {
+    const confirmed = window.confirm(`Adakah anda pasti mahu memuat naik senarai asal 45 guru ke pangkalan data?`);
+    if (!confirmed) return;
+
+    setSeeding(true);
+    try {
+      await onSeedDefault();
+      setFeedback({ type: 'success', message: 'Senarai asal 45 guru berjaya dimuat naik!' });
+    } catch (err: any) {
+      console.error(err);
+      setFeedback({ type: 'error', message: 'Gagal memuat naik senarai asal: ' + (err.message || 'Ralat sistem.') });
+    } finally {
+      setSeeding(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card className="p-6 sm:p-8 bg-gradient-to-r from-blue-50/70 via-white to-slate-50 border-slate-200">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="p-1.5 rounded-lg bg-blue-600 text-white shadow-sm">
+                <Users className="w-4 h-4" />
+              </span>
+              <h2 className="text-lg font-bold text-slate-900 tracking-tight">Pengurusan Senarai Guru</h2>
+              <span className="px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-bold font-mono">
+                {teachers.length} Guru
+              </span>
+            </div>
+            <p className="text-xs text-slate-500">
+              Tambah nama guru baru, tukar ejaan atau padam guru untuk borang pilihan tempahan makmal.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button 
+              onClick={() => { setIsAdding(true); setEditingTeacher(null); }}
+              className="font-bold text-xs uppercase tracking-wider h-9 gap-1.5"
+            >
+              <Plus className="w-3.5 h-3.5" /> Tambah Guru Baru
+            </Button>
+            <Button 
+              variant="secondary" 
+              onClick={handleRestoreDefault} 
+              disabled={seeding}
+              className="font-bold text-xs tracking-wider h-9 gap-1.5 text-slate-600"
+              title="Muat semula senarai asal 45 guru"
+            >
+              <RotateCcw className="w-3.5 h-3.5" /> {seeding ? 'Memuatkan...' : 'Muat Semula 45 Asal'}
+            </Button>
+          </div>
+        </div>
+
+        <AnimatePresence>
+          {feedback && (
+            <motion.div 
+              initial={{ opacity: 0, y: -10 }} 
+              animate={{ opacity: 1, y: 0 }} 
+              exit={{ opacity: 0, y: -10 }}
+              className={cn(
+                "mt-4 p-3 rounded-lg text-xs font-bold flex items-center justify-between",
+                feedback.type === 'success' ? "bg-emerald-50 text-emerald-800 border border-emerald-200" : "bg-rose-50 text-rose-800 border border-rose-200"
+              )}
+            >
+              <div className="flex items-center gap-2">
+                {feedback.type === 'success' ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <AlertCircle className="w-4 h-4 text-rose-600" />}
+                <span>{feedback.message}</span>
+              </div>
+              <button onClick={() => setFeedback(null)} className="text-xs hover:opacity-75">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </Card>
+
+      <AnimatePresence>
+        {isAdding && (
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}>
+            <Card className="p-6 border-2 border-blue-500 bg-blue-50/20">
+              <div className="flex items-center justify-between mb-4 pb-2 border-b border-blue-100">
+                <h3 className="text-sm font-bold text-blue-900 flex items-center gap-2">
+                  <Plus className="w-4 h-4 text-blue-600" /> Tambah Nama Guru Baru
+                </h3>
+                <button onClick={() => setIsAdding(false)} className="text-slate-400 hover:text-slate-600 p-1">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleAddTeacher} className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 font-mono">
+                    Nama Penuh Guru (Huruf Besar)
+                  </label>
+                  <input 
+                    type="text" 
+                    value={newTeacherName}
+                    onChange={e => setNewTeacherName(e.target.value.toUpperCase())}
+                    placeholder="Contoh: AHMAD DANIAL BIN ABDULLAH"
+                    className="w-full p-3 rounded-lg border border-slate-300 bg-white text-sm font-bold text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all uppercase"
+                    autoFocus
+                    required
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1 italic">
+                    Nama akan disimpan secara automatik dalam huruf besar untuk keselarasan rekod.
+                  </p>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button type="button" variant="secondary" size="sm" onClick={() => setIsAdding(false)}>
+                    Batal
+                  </Button>
+                  <Button type="submit" size="sm" disabled={loading || !newTeacherName.trim()} className="font-bold">
+                    {loading ? 'Menyimpan...' : 'Simpan Guru Baru'}
+                  </Button>
+                </div>
+              </form>
+            </Card>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {editingTeacher && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }} 
+              animate={{ scale: 1, opacity: 1 }} 
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl border border-slate-200"
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+                <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                  <Pencil className="w-4 h-4 text-blue-600" /> Kemaskini Nama Guru
+                </h3>
+                <button onClick={() => setEditingTeacher(null)} className="text-slate-400 hover:text-slate-600">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleUpdateTeacher} className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 font-mono">
+                    Nama Guru
+                  </label>
+                  <input 
+                    type="text" 
+                    value={editName}
+                    onChange={e => setEditName(e.target.value.toUpperCase())}
+                    className="w-full p-3 rounded-lg border border-slate-300 bg-white text-sm font-bold text-slate-800 outline-none focus:border-blue-500 uppercase"
+                    autoFocus
+                    required
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button type="button" variant="secondary" size="sm" onClick={() => setEditingTeacher(null)}>
+                    Batal
+                  </Button>
+                  <Button type="submit" size="sm" disabled={loading || !editName.trim()} className="font-bold">
+                    {loading ? 'Mengemaskini...' : 'Simpan Perubahan'}
+                  </Button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <Card className="p-4 sm:p-6">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mb-6 pb-4 border-b border-slate-100">
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+            <input 
+              type="text"
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              placeholder="Cari nama guru..."
+              className="w-full pl-9 pr-8 py-2 rounded-lg border border-slate-200 bg-slate-50 focus:bg-white text-xs font-semibold outline-none focus:border-blue-500 transition-colors"
+            />
+            {searchTerm && (
+              <button 
+                onClick={() => setSearchTerm('')} 
+                className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          <div className="text-[11px] font-bold text-slate-500 flex items-center justify-between sm:justify-end gap-2">
+            <span>Menunjukkan: <b className="text-slate-800">{filteredTeachers.length}</b> daripada {teachers.length} guru</span>
+          </div>
+        </div>
+
+        {filteredTeachers.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 max-h-[600px] overflow-y-auto pr-1">
+            {filteredTeachers.map((teacher, index) => {
+              const parts = teacher.name.split(' ').filter(p => !['BIN', 'BINTI', 'BTE', 'ANAK', 'A/L', 'A/P', '@'].includes(p));
+              const initials = parts.length >= 2 
+                ? (parts[0][0] + parts[1][0]).toUpperCase() 
+                : teacher.name.substring(0, 2).toUpperCase();
+
+              return (
+                <div 
+                  key={teacher.id}
+                  className="flex items-center justify-between p-3 rounded-xl border border-slate-100 bg-white hover:border-blue-200 hover:shadow-xs transition-all group"
+                >
+                  <div className="flex items-center gap-3 min-w-0 pr-2">
+                    <span className="text-[10px] font-mono font-bold text-slate-300 w-5 text-right shrink-0">
+                      {index + 1}.
+                    </span>
+                    <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-700 font-bold text-xs flex items-center justify-center shrink-0 border border-blue-100">
+                      {initials}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-slate-800 truncate leading-tight group-hover:text-blue-600 transition-colors">
+                        {teacher.name}
+                      </p>
+                      <p className="text-[9px] text-slate-400 font-mono tracking-tight">
+                        ID: {teacher.id.substring(0, 8)}...
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => { setEditingTeacher(teacher); setEditName(teacher.name); }}
+                      className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                      title="Kemaskini Nama"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteTeacher(teacher)}
+                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                      title="Padam Guru"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="text-center py-12 px-4 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+            <Users className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+            <p className="text-xs font-bold text-slate-600">
+              {searchTerm ? `Tiada nama guru sepadan dengan carian "${searchTerm}"` : 'Tiada guru didaftarkan dalam sistem.'}
+            </p>
+            <p className="text-[10px] text-slate-400 mt-1">
+              {searchTerm ? 'Cuba kata kunci yang lain atau kosongkan carian.' : 'Klik butang di bawah untuk memuat naik senarai asal 45 guru atau tambah guru baru.'}
+            </p>
+            <div className="mt-4 flex items-center justify-center gap-2">
+              {searchTerm && (
+                <Button size="sm" variant="secondary" onClick={() => setSearchTerm('')}>
+                  Kosongkan Carian
+                </Button>
+              )}
+              {!searchTerm && (
+                <>
+                  <Button size="sm" onClick={() => setIsAdding(true)}>
+                    + Tambah Guru Baru
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={handleRestoreDefault} disabled={seeding}>
+                    Muat Naik 45 Guru Asal
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+function AdminSettingsView({ 
+  settings, 
+  labs, 
+  onOpenTeachersTab, 
+  teachersCount 
+}: { 
+  settings: AppSettings; 
+  labs: Lab[]; 
+  onOpenTeachersTab?: () => void; 
+  teachersCount?: number; 
+}) {
   const [form, setForm] = useState(settings);
   const [saving, setSaving] = useState(false);
 
@@ -1630,6 +2140,42 @@ function AdminSettingsView({ settings, labs }: { settings: AppSettings, labs: La
                 >
                   Padam Logo
                 </button>
+              )}
+            </div>
+          </div>
+
+          {/* Teacher Management Section */}
+          <div className="pt-6 mt-6 border-t border-slate-100">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5 text-blue-600" /> Senarai Guru ({teachersCount ?? 0} Orang Berdaftar)
+              </h4>
+              {onOpenTeachersTab && (
+                <button 
+                  type="button" 
+                  onClick={onOpenTeachersTab}
+                  className="text-[10px] text-blue-600 font-bold uppercase hover:underline flex items-center gap-1"
+                >
+                  Buka Tab Senarai Guru &rarr;
+                </button>
+              )}
+            </div>
+            <div className="p-4 rounded-xl border border-blue-100 bg-blue-50/40 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-slate-800">Pengurusan Guru Sekolah</p>
+                <p className="text-[10px] text-slate-500 mt-0.5">
+                  Tambah nama guru baharu, kemaskini ejaan, atau padam guru daripada senarai borang tempahan.
+                </p>
+              </div>
+              {onOpenTeachersTab && (
+                <Button 
+                  type="button" 
+                  size="sm" 
+                  onClick={onOpenTeachersTab}
+                  className="text-xs font-bold shrink-0 ml-3 gap-1"
+                >
+                  <Users className="w-3.5 h-3.5" /> Urus Guru
+                </Button>
               )}
             </div>
           </div>
