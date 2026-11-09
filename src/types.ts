@@ -14,6 +14,8 @@ export interface AppSettings {
   adminPassword?: string; 
   telegramBotToken?: string;
   telegramChatId?: string;
+  isLabClosed?: boolean;
+  labClosedReason?: string;
 }
 
 export type BookingStatus = 'pending' | 'confirmed' | 'rejected';

@@ -49,7 +49,11 @@ import {
   Users,
   Search,
   RotateCcw,
-  Check
+  Check,
+  Ban,
+  ShieldAlert,
+  Info,
+  Power
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import jsPDF from 'jspdf';
@@ -173,7 +177,9 @@ export default function App() {
           systemDescription: 'Pengurusan Tempahan Berpusat',
           logoUrl: '',
           telegramBotToken: '',
-          telegramChatId: ''
+          telegramChatId: '',
+          isLabClosed: false,
+          labClosedReason: ''
         });
       }
     });
@@ -448,10 +454,17 @@ export default function App() {
             </h2>
           </div>
           <div className="flex space-x-2 sm:space-x-3 items-center">
-            <div className="hidden sm:flex items-center px-3 py-1.5 bg-green-50 text-green-700 rounded-full border border-green-100 text-[10px] font-bold uppercase tracking-wider">
-              <span className="w-1.5 h-1.5 bg-green-500 rounded-full mr-2"></span>
-              Tersedia
-            </div>
+            {settings.isLabClosed ? (
+              <div className="flex items-center px-3 py-1.5 bg-rose-50 text-rose-700 rounded-full border border-rose-200 text-[10px] font-bold uppercase tracking-wider animate-pulse">
+                <span className="w-1.5 h-1.5 bg-rose-600 rounded-full mr-2"></span>
+                Tempahan Ditutup
+              </div>
+            ) : (
+              <div className="hidden sm:flex items-center px-3 py-1.5 bg-green-50 text-green-700 rounded-full border border-green-100 text-[10px] font-bold uppercase tracking-wider">
+                <span className="w-1.5 h-1.5 bg-green-500 rounded-full mr-2"></span>
+                Tersedia
+              </div>
+            )}
             <div className="relative p-2 text-slate-400 hover:text-slate-600 transition-colors">
               <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-rose-500 rounded-full border-2 border-white"></span>
               <AlertCircle className="w-5 h-5" />
@@ -460,7 +473,40 @@ export default function App() {
         </header>
 
         <div className="p-4 lg:p-6 flex-1 overflow-y-auto bg-slate-50/50">
-          <div className="max-w-6xl mx-auto">
+          <div className="max-w-6xl mx-auto space-y-4">
+            {settings.isLabClosed && (
+              <motion.div 
+                initial={{ opacity: 0, y: -10 }} 
+                animate={{ opacity: 1, y: 0 }}
+                className="p-4 rounded-xl bg-gradient-to-r from-rose-500 to-rose-600 text-white shadow-md flex items-start gap-3"
+              >
+                <div className="p-2 rounded-lg bg-white/20 shrink-0 mt-0.5">
+                  <Ban className="w-5 h-5 text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-0.5 rounded bg-white/25 text-[9px] font-bold uppercase tracking-wider">
+                      Notis Pentadbir
+                    </span>
+                    <h3 className="text-sm font-bold">Akses Tempahan Makmal Ditutup Sementara</h3>
+                  </div>
+                  <p className="text-xs text-rose-100 mt-1">
+                    {settings.labClosedReason 
+                      ? settings.labClosedReason 
+                      : 'Makmal Bahasa ditutup untuk sebarang tempahan baharu buat masa ini sehingga dibuka semula oleh Admin.'}
+                  </p>
+                </div>
+                {activeTab !== 'admin' && (
+                  <button 
+                    onClick={() => setActiveTab('admin')}
+                    className="hidden sm:inline-flex items-center px-3 py-1.5 bg-white text-rose-700 text-xs font-bold rounded-lg shadow-sm hover:bg-rose-50 transition-colors shrink-0"
+                  >
+                    Buka Admin Panel
+                  </button>
+                )}
+              </motion.div>
+            )}
+
             <AnimatePresence mode="wait">
               {activeTab === 'dashboard' && (
                 <motion.div 
@@ -469,7 +515,7 @@ export default function App() {
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                 >
-                  <DashboardView profile={profile} bookings={bookings} />
+                  <DashboardView profile={profile} bookings={bookings} settings={settings} onGoToCalendar={() => setActiveTab('calendar')} />
                 </motion.div>
               )}
               {activeTab === 'calendar' && (
@@ -595,7 +641,17 @@ function TabButton({ active, onClick, icon, label }: { active: boolean, onClick:
   );
 }
 
-function DashboardView({ profile, bookings }: { profile: UserProfile, bookings: Booking[] }) {
+function DashboardView({ 
+  profile, 
+  bookings, 
+  settings, 
+  onGoToCalendar 
+}: { 
+  profile: UserProfile; 
+  bookings: Booking[]; 
+  settings?: AppSettings; 
+  onGoToCalendar?: () => void; 
+}) {
   const stats = {
     pending: bookings.filter(b => b.status === 'pending').length,
     confirmed: bookings.filter(b => b.status === 'confirmed').length,
@@ -604,6 +660,22 @@ function DashboardView({ profile, bookings }: { profile: UserProfile, bookings: 
 
   return (
     <div className="space-y-6">
+      {settings?.isLabClosed && (
+        <Card className="p-5 border-l-4 border-l-rose-500 bg-rose-50/50">
+          <div className="flex items-start gap-3">
+            <div className="p-2 bg-rose-100 rounded-lg text-rose-700">
+              <Ban className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-rose-900">Makmal Bahasa Ditutup Sementara</h3>
+              <p className="text-xs text-rose-700 mt-0.5">
+                {settings.labClosedReason || 'Pihak pentadbir telah menutup sementara akses tempahan makmal. Pengguna tidak boleh menghantar sebarang tempahan baharu.'}
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
+
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 lg:gap-6">
         <StatCard title="Menunggu" value={stats.pending} icon={<Clock className="text-amber-500 w-5 h-5" />} color="amber" />
         <StatCard title="Disahkan" value={stats.confirmed} icon={<CheckCircle2 className="text-emerald-500 w-5 h-5" />} color="emerald" />
@@ -824,11 +896,23 @@ function CalendarView({ labs, bookings, profile, settings, teacherNames }: { lab
           </div>
         </div>
 
-        <Card className="p-4 bg-white border-l-4 border-l-blue-600">
-          <div className="mb-6">
+        <Card className={cn("p-4 bg-white border-l-4", settings?.isLabClosed ? "border-l-rose-500" : "border-l-blue-600")}>
+          <div className="mb-4">
             <h3 className="font-bold text-sm text-slate-800">{format(selectedDay, 'eeee, dd MMM')}</h3>
             <p className="text-[10px] font-medium text-slate-400 uppercase tracking-tight">Slot Makmal: {selectedLab?.name}</p>
           </div>
+
+          {settings?.isLabClosed && (
+            <div className="mb-4 p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs">
+              <div className="flex items-center gap-1.5 font-bold">
+                <Ban className="w-4 h-4 text-rose-600" />
+                <span>Makmal Ditutup Oleh Pentadbir</span>
+              </div>
+              <p className="text-[10px] text-rose-600 mt-1 leading-relaxed">
+                {settings.labClosedReason || 'Tempahan tidak dibenarkan buat masa ini sehingga dibuka semula oleh Admin.'}
+              </p>
+            </div>
+          )}
 
           <div className="space-y-2 mb-2">
             {TIME_SLOTS.map(slot => {
@@ -859,8 +943,13 @@ function CalendarView({ labs, bookings, profile, settings, teacherNames }: { lab
                       <span className="text-[11px] font-medium text-slate-400 italic">Tersedia</span>
                     )}
                   </div>
-                  {!booking && isAllowable && (
+                  {!booking && !settings?.isLabClosed && isAllowable && (
                     <Button size="sm" variant="outline" className="h-7 py-0 px-2 text-[10px] border-blue-400 text-blue-600" onClick={() => setIsBookingModalOpen(true)}>Tempah</Button>
+                  )}
+                  {!booking && settings?.isLabClosed && isAllowable && (
+                    <span className="text-[9px] font-bold text-rose-500 bg-rose-50 px-2 py-0.5 rounded border border-rose-200 uppercase tracking-tighter flex items-center gap-1">
+                      <Ban className="w-2.5 h-2.5" /> Ditutup
+                    </span>
                   )}
                   {!booking && !isAllowable && (
                      <span className="text-[9px] font-bold text-slate-300 uppercase tracking-tighter">Tutup</span>
@@ -929,6 +1018,11 @@ function BookingModal({
   const handleBooking = async () => {
     if (selectedSlots.length === 0 || !teacherName || !className || !purpose) return;
     
+    if (settings?.isLabClosed) {
+      alert('Maaf, Makmal Bahasa sedang ditutup untuk tempahan oleh pihak Pentadbir.\n\nSebab: ' + (settings.labClosedReason || 'Akses ditutup buat sementara waktu.'));
+      return;
+    }
+
     const today = startOfToday();
     const tomorrow = addDays(today, 1);
     const isToday = isSameDay(date, today);
@@ -1163,8 +1257,8 @@ function AdminPanelView({
 
   return (
     <div className="space-y-6">
-      <div className="overflow-x-auto -mx-1 p-1">
-        <div className="flex gap-2 p-1 bg-slate-200/50 rounded-xl w-fit whitespace-nowrap">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 -mx-1 p-1">
+        <div className="flex gap-2 p-1 bg-slate-200/50 rounded-xl w-fit whitespace-nowrap overflow-x-auto">
           <button 
             onClick={() => setAdminTab('approvals')}
             className={cn(
@@ -1212,6 +1306,50 @@ function AdminPanelView({
           >
             <BookOpen className="w-3.5 h-3.5" />
             Laporan
+          </button>
+        </div>
+
+        {/* Quick Lab Closure Indicator / Toggle */}
+        <div className="flex items-center gap-2 mt-2 sm:mt-0">
+          <button
+            type="button"
+            onClick={async () => {
+              const currentStatus = Boolean(settings.isLabClosed);
+              const nextStatus = !currentStatus;
+              let reason = settings.labClosedReason || '';
+              if (nextStatus && !reason) {
+                const promptReason = prompt('Masukkan alasan penutupan makmal (pilihan):', 'Makmal Bahasa ditutup sementara oleh Pentadbir.');
+                if (promptReason !== null) reason = promptReason;
+              }
+              try {
+                await updateDoc(doc(db, 'settings', 'global'), {
+                  isLabClosed: nextStatus,
+                  labClosedReason: reason
+                });
+              } catch (e) {
+                console.error(e);
+                alert('Gagal mengemaskini status makmal.');
+              }
+            }}
+            className={cn(
+              "px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-xs active:scale-95",
+              settings.isLabClosed
+                ? "bg-rose-600 text-white hover:bg-rose-700"
+                : "bg-emerald-600 text-white hover:bg-emerald-700"
+            )}
+            title={settings.isLabClosed ? "Klik untuk buka semula akses tempahan" : "Klik untuk tutup akses tempahan makmal"}
+          >
+            {settings.isLabClosed ? (
+              <>
+                <Ban className="w-3.5 h-3.5" />
+                <span>Makmal: Ditutup (Klik Buka)</span>
+              </>
+            ) : (
+              <>
+                <Power className="w-3.5 h-3.5" />
+                <span>Makmal: Dibuka (Klik Tutup)</span>
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -1968,6 +2106,10 @@ function AdminSettingsView({
   const [form, setForm] = useState(settings);
   const [saving, setSaving] = useState(false);
 
+  useEffect(() => {
+    setForm(settings);
+  }, [settings]);
+
   const handleDeleteLab = async (id: string) => {
     if (!confirm('Adakah anda pasti mahu memadam makmal ini? Semua tempahan berkaitan mungkin terjejas.')) return;
     try {
@@ -2010,7 +2152,9 @@ function AdminSettingsView({
         systemDescription: form.systemDescription,
         logoUrl: form.logoUrl,
         telegramBotToken: form.telegramBotToken || '',
-        telegramChatId: form.telegramChatId || ''
+        telegramChatId: form.telegramChatId || '',
+        isLabClosed: Boolean(form.isLabClosed),
+        labClosedReason: form.labClosedReason || ''
       };
       await setDoc(doc(db, 'settings', 'global'), globalData);
       
@@ -2071,6 +2215,89 @@ function AdminSettingsView({
         <h3 className="text-sm font-bold text-slate-800 uppercase tracking-widest mb-6 border-b border-slate-100 pb-3 flex items-center gap-2">
           <SettingsIcon className="w-4 h-4 text-slate-400" /> Konfigurasi Sistem
         </h3>
+
+        {/* Kawalan Akses & Status Makmal Bahasa */}
+        <div className={cn(
+          "mb-6 p-5 rounded-2xl border transition-all",
+          form.isLabClosed 
+            ? "bg-rose-50/70 border-rose-300" 
+            : "bg-emerald-50/60 border-emerald-300"
+        )}>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className={cn(
+                "p-2.5 rounded-xl text-white shrink-0 shadow-sm",
+                form.isLabClosed ? "bg-rose-600" : "bg-emerald-600"
+              )}>
+                {form.isLabClosed ? <Ban className="w-5 h-5" /> : <Power className="w-5 h-5" />}
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="text-sm font-bold text-slate-900">
+                    Status Akses Tempahan Makmal
+                  </h4>
+                  <span className={cn(
+                    "px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider",
+                    form.isLabClosed 
+                      ? "bg-rose-200 text-rose-800" 
+                      : "bg-emerald-200 text-emerald-800"
+                  )}>
+                    {form.isLabClosed ? 'DITUTUP KEPADA PENGGUNA' : 'DIBUKA (AKTIF)'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                  {form.isLabClosed
+                    ? 'Akses tempahan ditutup. Tiada guru boleh menghantar tempahan baharu sehingga admin membuka semula akses.'
+                    : 'Makmal kini dibuka. Guru boleh menempah slot waktu mengikut tarikh yang dibenarkan.'}
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                const nextState = !form.isLabClosed;
+                setForm(prev => ({ ...prev, isLabClosed: nextState }));
+              }}
+              className={cn(
+                "px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all shadow-sm shrink-0 flex items-center justify-center gap-2 active:scale-95",
+                form.isLabClosed
+                  ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                  : "bg-rose-600 text-white hover:bg-rose-700"
+              )}
+            >
+              {form.isLabClosed ? (
+                <>
+                  <Check className="w-4 h-4" /> Buka Akses Makmal
+                </>
+              ) : (
+                <>
+                  <Ban className="w-4 h-4" /> Tutup Makmal Sekarang
+                </>
+              )}
+            </button>
+          </div>
+
+          {form.isLabClosed && (
+            <div className="mt-4 pt-4 border-t border-rose-200/80 space-y-2">
+              <label className="block text-[10px] font-bold text-rose-900 uppercase tracking-widest font-mono flex items-center gap-1.5">
+                <Info className="w-3.5 h-3.5 text-rose-600" />
+                Mesej / Alasan Penutupan Makmal (Akan dipaparkan kepada guru):
+              </label>
+              <textarea
+                value={form.labClosedReason || ''}
+                onChange={e => setForm({ ...form, labClosedReason: e.target.value })}
+                placeholder="Contoh: Makmal Bahasa ditutup sementara untuk kerja-kerja penyelenggaraan komputer & rangkaian. Harap maklum."
+                rows={2}
+                className="w-full p-2.5 rounded-lg border border-rose-200 bg-white text-xs font-medium text-slate-800 outline-none focus:border-rose-400 focus:ring-1 focus:ring-rose-200 resize-none"
+              />
+              <p className="text-[10px] text-rose-600 italic">
+                *Nota: Sila klik &quot;Simpan Tetapan&quot; di bawah untuk menyimpan perubahan status atau alasan ini ke pelayan.
+              </p>
+            </div>
+          )}
+        </div>
+
         <form onSubmit={handleSave} className="space-y-6">
           <div className="space-y-4">
             <div>
