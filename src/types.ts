@@ -118,6 +118,54 @@ export const TEACHERS = [
   "WAN MOHD LUKMANUL HAKIM BIN WAN MAZLI"
 ];
 
+export const ADMIN_TEACHER_KEYWORDS = [
+  "HAMDI",
+  "LAM KAH",
+  "RAMOS",
+  "JAMALLUDIN"
+];
+
+// Helper to check if a name belongs to an admin/pentadbir
+export function getAdminPriority(name: string): number {
+  const upper = name.toUpperCase();
+  for (let i = 0; i < ADMIN_TEACHER_KEYWORDS.length; i++) {
+    if (upper.includes(ADMIN_TEACHER_KEYWORDS[i])) {
+      return i; // 0 for HAMDI, 1 for LAM KAH, 2 for RAMOS, 3 for JAMALLUDIN
+    }
+  }
+  return 999; // Normal teacher
+}
+
+export function isAdministratorTeacher(name: string): boolean {
+  return getAdminPriority(name) < 999;
+}
+
+// Function to sort teacher names: Pentadbir first (HAMDI, LAM KAH, RAMOS, JAMALLUDIN), then alphabetical
+export function sortTeacherNames(names: string[]): string[] {
+  return [...names].sort((a, b) => {
+    const priorityA = getAdminPriority(a);
+    const priorityB = getAdminPriority(b);
+
+    if (priorityA !== priorityB) {
+      return priorityA - priorityB;
+    }
+    return a.localeCompare(b, 'ms');
+  });
+}
+
+// Function to sort Teacher objects: Pentadbir first, then alphabetical
+export function sortTeacherObjects<T extends { name: string }>(items: T[]): T[] {
+  return [...items].sort((a, b) => {
+    const priorityA = getAdminPriority(a.name);
+    const priorityB = getAdminPriority(b.name);
+
+    if (priorityA !== priorityB) {
+      return priorityA - priorityB;
+    }
+    return a.name.localeCompare(b.name, 'ms');
+  });
+}
+
 export const CLASSES = [
   "1A", "1C", "1D",
   "2A", "2C", "2D",

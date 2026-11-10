@@ -76,7 +76,21 @@ import {
 
 import { auth, db } from './lib/firebase';
 import { cn } from './lib/utils';
-import { UserProfile, Booking, BookingStatus, Lab, AppSettings, TIME_SLOTS, TEACHERS, CLASSES, PURPOSES, Teacher } from './types';
+import { 
+  UserProfile, 
+  Booking, 
+  BookingStatus, 
+  Lab, 
+  AppSettings, 
+  TIME_SLOTS, 
+  TEACHERS, 
+  CLASSES, 
+  PURPOSES, 
+  Teacher,
+  sortTeacherNames,
+  sortTeacherObjects,
+  isAdministratorTeacher
+} from './types';
 
 // --- Components ---
 
@@ -289,7 +303,8 @@ export default function App() {
     await batch.commit();
   };
 
-  const teacherNames = teachers.length > 0 ? teachers.map(t => t.name) : TEACHERS;
+  const rawTeacherNames = teachers.length > 0 ? teachers.map(t => t.name) : TEACHERS;
+  const teacherNames = sortTeacherNames(rawTeacherNames);
 
   // Sync Bookings
   useEffect(() => {
@@ -1001,7 +1016,9 @@ function BookingModal({
   const [purpose, setPurpose] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const availableTeachers = teacherNames && teacherNames.length > 0 ? teacherNames : TEACHERS;
+  const sortedAvailableTeachers = sortTeacherNames(teacherNames && teacherNames.length > 0 ? teacherNames : TEACHERS);
+  const adminTeachers = sortedAvailableTeachers.filter(t => isAdministratorTeacher(t));
+  const otherTeachers = sortedAvailableTeachers.filter(t => !isAdministratorTeacher(t));
 
   const toggleSlot = (slot: string) => {
     if (selectedSlots.includes(slot)) {
@@ -1121,8 +1138,25 @@ function BookingModal({
                 onChange={e => setTeacherName(e.target.value)}
                 className="w-full p-2.5 rounded-lg border border-slate-200 text-xs font-bold bg-slate-50 focus:bg-white focus:border-blue-500 transition-all outline-none"
               >
-                <option value="">-- Pilih Nama ({availableTeachers.length} Guru) --</option>
-                {availableTeachers.map(t => <option key={t} value={t}>{t}</option>)}
+                <option value="">-- Pilih Nama ({sortedAvailableTeachers.length} Guru) --</option>
+                {adminTeachers.length > 0 && (
+                  <optgroup label="⭐ BARISAN PENTADBIR">
+                    {adminTeachers.map(t => (
+                      <option key={t} value={t}>
+                        ★ {t}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {otherTeachers.length > 0 && (
+                  <optgroup label="📚 GURU-GURU (A-Z)">
+                    {otherTeachers.map(t => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
             </div>
 
@@ -1560,7 +1594,9 @@ function EditBookingModal({
   const [purpose, setPurpose] = useState(booking.purpose || '');
   const [loading, setLoading] = useState(false);
 
-  const availableTeachers = teacherNames && teacherNames.length > 0 ? teacherNames : TEACHERS;
+  const sortedAvailableTeachers = sortTeacherNames(teacherNames && teacherNames.length > 0 ? teacherNames : TEACHERS);
+  const adminTeachers = sortedAvailableTeachers.filter(t => isAdministratorTeacher(t));
+  const otherTeachers = sortedAvailableTeachers.filter(t => !isAdministratorTeacher(t));
 
   // We need to know other bookings on the same day for slot conflict check
   const [dayBookings, setDayBookings] = useState<Booking[]>([]);
@@ -1640,8 +1676,25 @@ function EditBookingModal({
                 onChange={e => setTeacherName(e.target.value)}
                 className="w-full p-2.5 rounded-lg border border-slate-200 text-xs font-bold bg-slate-50 focus:bg-white focus:border-blue-500 transition-all outline-none"
               >
-                <option value="">-- Pilih Nama ({availableTeachers.length} Guru) --</option>
-                {availableTeachers.map(t => <option key={t} value={t}>{t}</option>)}
+                <option value="">-- Pilih Nama ({sortedAvailableTeachers.length} Guru) --</option>
+                {adminTeachers.length > 0 && (
+                  <optgroup label="⭐ BARISAN PENTADBIR">
+                    {adminTeachers.map(t => (
+                      <option key={t} value={t}>
+                        ★ {t}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {otherTeachers.length > 0 && (
+                  <optgroup label="📚 GURU-GURU (A-Z)">
+                    {otherTeachers.map(t => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
             </div>
 
@@ -1733,7 +1786,7 @@ function AdminTeachersView({
     }
   }, [feedback]);
 
-  const sortedTeachers = [...teachers].sort((a, b) => a.name.localeCompare(b.name, 'ms'));
+  const sortedTeachers = sortTeacherObjects(teachers);
 
   const filteredTeachers = sortedTeachers.filter(t => 
     t.name.toLowerCase().includes(searchTerm.toLowerCase().trim())
@@ -2028,9 +2081,16 @@ function AdminTeachersView({
                       {initials}
                     </div>
                     <div className="min-w-0">
-                      <p className="text-xs font-bold text-slate-800 truncate leading-tight group-hover:text-blue-600 transition-colors">
-                        {teacher.name}
-                      </p>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p className="text-xs font-bold text-slate-800 truncate leading-tight group-hover:text-blue-600 transition-colors">
+                          {teacher.name}
+                        </p>
+                        {isAdministratorTeacher(teacher.name) && (
+                          <span className="px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 text-[8px] font-bold uppercase tracking-wider shrink-0 border border-amber-200">
+                            Pentadbir
+                          </span>
+                        )}
+                      </div>
                       <p className="text-[9px] text-slate-400 font-mono tracking-tight">
                         ID: {teacher.id.substring(0, 8)}...
                       </p>
